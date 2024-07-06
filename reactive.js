@@ -1,8 +1,8 @@
+'use strict'
 const data = { foo: 1, bar: 2 }
 const data2 = { name: 'xygod', email: '1323943635@qq.com' }
 
 const bucket = new WeakMap()
-
 /**
  * this variable is use for collect effect when they call ,
  * we want parent effect function can be depends for parent key but parent key depends children effect
@@ -23,10 +23,19 @@ let activeEffect
  */
 function registerEffect(wantRegisterEffectFunction, options = {}) {
 	const runEffect = () => {
-		cleanup(runEffect)
+		cleanup(runEffect) //执行副作用函数前先清除依赖关系,以免分支切换的时候有不必要的副作用依赖存在
+		// 收集依赖关系
 		activeEffect = runEffect
 		effectStack.push(runEffect)
+		// 执行副作用函数,执行副作用函数的目的是触发代理对象的get拦截,然后收集依赖
+		// 至于为什么要拿到因为副作用函数可能是一个getters函数，需要执行才能拿到值,我们可以在computed和watch中使用
 		const res = wantRegisterEffectFunction()
+		/* 
+         为什么要用一个副作用栈临时储存副作用函数呢?因为要注册副作用函数(registerEffect)可能会发生嵌套,如果发生嵌套而且没有
+         副作用栈的话,只有一个activeEffect,这时候执行内层副作用函数的时候,外层的副作用函数会被内层的副作用函数覆盖(activeEffect被覆盖),
+         而且在内层执行完毕的时候activeEffect再次运行外层副作用函数时activeEffect也不会指向外层函数,这就导致了外层函数没有被正确的收集,导致了错误
+         所以需要这么一个栈来保证每次副作用函数执行完毕时activeEffect一直指向最外层的函数
+        */
 		effectStack.pop()
 		activeEffect = effectStack[effectStack.length - 1]
 		return res
@@ -35,10 +44,8 @@ function registerEffect(wantRegisterEffectFunction, options = {}) {
 	runEffect.options = options
 	if (!options.lazy) {
 		runEffect()
-	} else {
-		if (options.who) console.log(options.who, options.lazy)
 	}
-	return runEffect
+	return runEffect //registerEffect的返回值是runEffect函数,而runEffect函数的返回值是wantRegisterEffectFunction函数的返回值,所以registerEffect的返回值的返回值(注意是两层返回值)就是wantRegisterEffectFunction函数的返回值,可以用于computed和watch使用
 }
 function cleanup(runEffect) {
 	for (let i = 0; i < runEffect.deps.length; i++) {
@@ -74,6 +81,64 @@ const reactive_obj2 = new Proxy(data2, {
 		return true
 	},
 })
+const data3 = {
+	foo: 1,
+	bar: function () {
+		return this.foo
+	},
+}
+const reactive_obj3 = new Proxy(data3, {
+	get(target, key, receiver) {
+		track(target, key)
+		return Reflect.get(target, key, receiver) //receiver是为了解决this指向的问题,因为调用bar后的this是原始对象而不是代理对象,这是因为通过function声明的函数会记住定义时的定义域,也就是原始对象的词法定义域
+	},
+	set(target, key, newValue, receiver) {
+		// target[key] = newValue
+		Reflect.set(target, key, newValue, receiver)
+		trigger(target, key)
+		return true
+	},
+})
+
+function reactive(obj) {
+	return new Proxy(obj, {
+		get(target, key, receiver) {
+			track(target, key)
+			return Reflect.get(target, key, receiver)
+		},
+		set(target, key, newValue, receiver) {
+			const res = Reflect.set(target, key, newValue, receiver)
+			trigger(target, key)
+			return res
+		},
+		has(target, key) {
+			track(target, key)
+			return Reflect.has(target, key)
+		},
+	})
+}
+const reactive_obj5 = reactive({
+	p: 1,
+})
+registerEffect(() => {
+	if ('p' in reactive_obj5) {
+		console.log('reactive_obj5.p')
+	}
+})
+reactive_obj5.p = 2
+const userInfoRaw = {
+	name: '南笙芷',
+	age: 20,
+}
+const userInfoReactive = reactive(userInfoRaw)
+registerEffect(() => {
+	console.log('user_age:', userInfoReactive.age)
+})
+userInfoReactive.age = 21
+registerEffect(() => {
+	console.log('reactive_obj3.bar()', reactive_obj3.bar())
+})
+reactive_obj3.foo = 2
 
 /**
  * track depends for target
@@ -103,7 +168,7 @@ function track(target, key) {
 		desMap.set(key, (des = new Set()))
 	}
 	des.add(activeEffect)
-	// 将依赖集合添加到deps中
+	// 将依赖集合添加到deps中,方便清除副作用函数
 	activeEffect.deps.push(des)
 }
 
@@ -153,7 +218,7 @@ function computed(getter) {
 	const obj = {
 		get value() {
 			if (dirty) {
-				value = effect()
+				value = effect() //这个函数的返回值就是传入的getter函数的返回值,所以computed函数的返回值就是getter函数的返回值,但中间我们做了computed的一些处理(依赖收集)
 				dirty = false
 				// we HM call track collect computed'effect when computed'value get
 				track(obj, 'value')
@@ -165,6 +230,10 @@ function computed(getter) {
 }
 
 // watch
+/**
+ * 这个函数的作用是遍历一个对象所有属性,包括子属性,如果值是对象,则递归调用遍历函数
+ * @returns {}
+ */
 function traverse(value, seen = new Set()) {
 	if (typeof value !== 'object' || value === null || seen.has(value)) {
 		return
@@ -173,12 +242,13 @@ function traverse(value, seen = new Set()) {
 	for (const key in value) {
 		traverse(value[key], seen)
 	}
+	console.log('traverse ', value)
 	return value
 }
 /**
  * watch function can watch obj or value change an call you self function
  * @param {Function | Object} source - you can input getter or specific obj value we will
- *  call getter to track depends
+ * call getter to track depends
  * @param {Function} cb - you self function , that call when source includes reactive value changed
  * @returns {void}
  */
@@ -208,23 +278,26 @@ function watch(source, cb, options = {}) {
 		cb(newValue, oldValue, onInvalidate)
 		oldValue = newValue
 	}
+
 	/**
 	 *registerEffect function return value is runEffect:24 function , that function return value is effect function return value,
 	 *in this case watch function first argument is obj or getter , any way , we all transform getter that return value is that includes reactive data
 	 *so,registerEffect function return value is we want that return value,because runEffect will return we input effect function return value
 	 **/
-	const effectFun = registerEffect(() => getter(), {
-		lazy: true,
-		who: 'watch',
-		scheduler() {
-			if (options.flush === 'post') {
-				const p = Promise.resolve()
-				p.then(doJob)
-			} else {
-				doJob()
-			}
-		},
-	})
+	const effectFun = registerEffect(
+		() => getter() /* 这个getter很有意思,需要经常揣摩 */,
+		{
+			lazy: true, // 设置懒执行是因为我们需要手动管理副作用函数的执行时机,比如立即执行啊,和获取新久值啊
+			scheduler() {
+				if (options.flush === 'post') {
+					const p = Promise.resolve()
+					p.then(doJob)
+				} else {
+					doJob()
+				}
+			},
+		}
+	)
 	if (options.immediate) {
 		doJob()
 	} else {
@@ -233,28 +306,56 @@ function watch(source, cb, options = {}) {
 }
 
 // run
-let finalData
+let finalData = reactive({ data: 1 })
+const reactive_obj4 = reactive({
+	foo: 1,
+	bar: 2,
+	obj: {
+		a: 1,
+	},
+})
 watch(
-	() => reactive_obj2.name,
-	// HOW 回调函数在每次执行的时候都会新开一个作用域,每次函数执行时的作用域是不同的,不能一概而论
+	reactive_obj4,
+	(newValue, oldValue, onInvalidate) => {
+		console.log('reactive_obj4改变了', newValue, oldValue)
+	},
+	{
+		immediate: true,
+	}
+)
+reactive_obj4.foo = 2
+watch(
+	() => reactive_obj2,
 	async (newValue, oldValue, onInvalidate) => {
 		let expired = false
+		// 作为过期回调函数,其实就是相对于第二次修改监听的值后第一次的回调函数,那第一次的回调函数我们称为过期的回调函数,我们需要对过期的回调函数做一些事情
+		// 传入的回调函数其实就是闭包的实际应用,能记住当前作用域
+		// 因为我们注册的过期函数会在执行下次effect时被调用,所以每次执行的过期回调函数其实是上次watch的回调函数注册的过期回调函数，因为是闭包，所以能记住上次的回调函数的作用域
 		onInvalidate(() => {
 			expired = true
 		})
 		const res = await new Promise((resolve, reject) => {
 			setTimeout(() => {
-				resolve('data')
-			}, 1000)
+				resolve(newValue)
+			}, 400)
 		})
+
 		if (!expired) {
-			finalData = res
+			finalData.data = res
+			// console.log('finalData:', finalData.data)
 		}
 		console.log('reactive_obj2改变了', newValue, oldValue)
 	},
 	{
 		immediate: false,
 		flush: 'post',
+	}
+)
+registerEffect(() => finalData.data)
+watch(
+	() => finalData.data,
+	(newValue, oldValue) => {
+		console.log('finalData:', 'old ', newValue, 'new ', oldValue)
 	}
 )
 // reactive_obj2

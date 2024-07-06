@@ -25,3 +25,6 @@ for (let key in count) {
 for (let i of count) {
 	console.log(i)
 }
+;(function (a) {
+	console.log(a)
+})({})

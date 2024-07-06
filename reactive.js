@@ -1,6 +1,4 @@
 'use strict'
-const data = { foo: 1, bar: 2 }
-const data2 = { name: 'xygod', email: '1323943635@qq.com' }
 
 const bucket = new WeakMap()
 /**
@@ -58,6 +56,8 @@ function cleanup(runEffect) {
 	}
 	runEffect.deps.length = 0
 }
+
+const data = { foo: 1, bar: 2 }
 const reactive_obj = new Proxy(data, {
 	get(target, key) {
 		track(target, key)
@@ -70,17 +70,7 @@ const reactive_obj = new Proxy(data, {
 	},
 })
 
-const reactive_obj2 = new Proxy(data2, {
-	get(target, key) {
-		track(target, key)
-		return target[key]
-	},
-	set(target, key, newValue) {
-		target[key] = newValue
-		trigger(target, key)
-		return true
-	},
-})
+// 测试this指向导致的依赖收集错误,引出了Reflect的作用
 const data3 = {
 	foo: 1,
 	bar: function () {
@@ -99,6 +89,34 @@ const reactive_obj3 = new Proxy(data3, {
 		return true
 	},
 })
+// for in/of 的依赖收集 唯一键名
+let ITERATE_KEY = Symbol() //Returns a new unique Symbol value.
+const reactive_obj6 = reactive({
+	b: 1,
+})
+// 测试对象类型的增删
+registerEffect(() => {
+	for (const key in reactive_obj6) {
+		console.log(key)
+	}
+})
+reactive_obj6.a = 2
+reactive_obj6.a = 2
+// 测试删除符
+const reactive_obj7 = reactive({
+	a: 2,
+	b: 3,
+	c: 4,
+})
+registerEffect(() => {
+	for (const key in reactive_obj7) {
+		console.log(key)
+		delete reactive_obj7[key]
+	}
+	// delete reactive_obj7.a
+	// console.log(reactive_obj7)
+})
+delete reactive_obj7.b
 
 function reactive(obj) {
 	return new Proxy(obj, {
@@ -107,39 +125,36 @@ function reactive(obj) {
 			return Reflect.get(target, key, receiver)
 		},
 		set(target, key, newValue, receiver) {
+			// 一定要先判断修改的是什么,不然修改完了再判断那永远都是SET
+			let type = Object.prototype.hasOwnProperty.call(target, key)
+				? 'SET'
+				: 'ADD'
 			const res = Reflect.set(target, key, newValue, receiver)
-			trigger(target, key)
+			trigger(target, key, type)
 			return res
 		},
 		has(target, key) {
 			track(target, key)
 			return Reflect.has(target, key)
 		},
+		ownKeys(target) {
+			// 因为执行for in/of的时候会调用对象的ownKeys方法,而这个方法
+			// 是不用传入key的(当然)所以如果我们想收集这个依赖的话,需要一个
+			// 额外的唯一标识来收集这些依赖(用Symbol作为标识,谁还敢说Symbol没用?!)
+			track(target, ITERATE_KEY)
+			// 相应的,触发的时候也要从ITERATE_KEY里读取依赖
+			return Reflect.ownKeys(target)
+		},
+		deleteProperty(target, key) {
+			const hadKey = Object.prototype.hasOwnProperty.call(target, key)
+			const res = Reflect.deleteProperty(target, key)
+			if (hadKey && res) {
+				trigger(target, key, 'DELETE')
+			}
+			return res
+		},
 	})
 }
-const reactive_obj5 = reactive({
-	p: 1,
-})
-registerEffect(() => {
-	if ('p' in reactive_obj5) {
-		console.log('reactive_obj5.p')
-	}
-})
-reactive_obj5.p = 2
-const userInfoRaw = {
-	name: '南笙芷',
-	age: 20,
-}
-const userInfoReactive = reactive(userInfoRaw)
-registerEffect(() => {
-	console.log('user_age:', userInfoReactive.age)
-})
-userInfoReactive.age = 21
-registerEffect(() => {
-	console.log('reactive_obj3.bar()', reactive_obj3.bar())
-})
-reactive_obj3.foo = 2
-
 /**
  * track depends for target
  * @param {object} target - you want track depends obj
@@ -178,16 +193,26 @@ function track(target, key) {
  * @param {string | object} key  - same on track
  * @returns {void}
  */
-function trigger(target, key) {
+function trigger(target, key, type) {
 	let desMap = bucket.get(target)
 	let des = desMap && desMap.get(key)
 	const runEffectFunctions = new Set()
+
 	des &&
 		des.forEach((fun) => {
 			if (activeEffect !== fun) {
 				runEffectFunctions.add(fun)
 			}
 		})
+	if (type === 'ADD' || type === 'DELETE') {
+		const iterateDes = desMap && desMap.get(ITERATE_KEY)
+		iterateDes &&
+			iterateDes.forEach((fun) => {
+				if (activeEffect !== fun) {
+					runEffectFunctions.add(fun)
+				}
+			})
+	}
 	runEffectFunctions.forEach((effectFun) => {
 		if (effectFun.options.scheduler) {
 			effectFun.options.scheduler(effectFun)
@@ -232,7 +257,6 @@ function computed(getter) {
 // watch
 /**
  * 这个函数的作用是遍历一个对象所有属性,包括子属性,如果值是对象,则递归调用遍历函数
- * @returns {}
  */
 function traverse(value, seen = new Set()) {
 	if (typeof value !== 'object' || value === null || seen.has(value)) {
@@ -242,7 +266,6 @@ function traverse(value, seen = new Set()) {
 	for (const key in value) {
 		traverse(value[key], seen)
 	}
-	console.log('traverse ', value)
 	return value
 }
 /**
@@ -307,23 +330,19 @@ function watch(source, cb, options = {}) {
 
 // run
 let finalData = reactive({ data: 1 })
-const reactive_obj4 = reactive({
-	foo: 1,
-	bar: 2,
-	obj: {
-		a: 1,
+
+const data2 = { name: 'xygod', email: '1323943635@qq.com' }
+const reactive_obj2 = new Proxy(data2, {
+	get(target, key) {
+		track(target, key)
+		return target[key]
+	},
+	set(target, key, newValue) {
+		target[key] = newValue
+		trigger(target, key)
+		return true
 	},
 })
-watch(
-	reactive_obj4,
-	(newValue, oldValue, onInvalidate) => {
-		console.log('reactive_obj4改变了', newValue, oldValue)
-	},
-	{
-		immediate: true,
-	}
-)
-reactive_obj4.foo = 2
 watch(
 	() => reactive_obj2,
 	async (newValue, oldValue, onInvalidate) => {
@@ -331,6 +350,7 @@ watch(
 		// 作为过期回调函数,其实就是相对于第二次修改监听的值后第一次的回调函数,那第一次的回调函数我们称为过期的回调函数,我们需要对过期的回调函数做一些事情
 		// 传入的回调函数其实就是闭包的实际应用,能记住当前作用域
 		// 因为我们注册的过期函数会在执行下次effect时被调用,所以每次执行的过期回调函数其实是上次watch的回调函数注册的过期回调函数，因为是闭包，所以能记住上次的回调函数的作用域
+		// 解决竞态问题
 		onInvalidate(() => {
 			expired = true
 		})
@@ -342,23 +362,16 @@ watch(
 
 		if (!expired) {
 			finalData.data = res
-			// console.log('finalData:', finalData.data)
 		}
-		console.log('reactive_obj2改变了', newValue, oldValue)
 	},
 	{
 		immediate: false,
 		flush: 'post',
 	}
 )
-registerEffect(() => finalData.data)
-watch(
-	() => finalData.data,
-	(newValue, oldValue) => {
-		console.log('finalData:', 'old ', newValue, 'new ', oldValue)
-	}
-)
+
 // reactive_obj2
+// 竞态问题
 reactive_obj2.name = '南笙芷'
 setTimeout(() => {
 	reactive_obj2.name = '南笙芷2'
@@ -372,6 +385,7 @@ reactive_obj.foo++
 let temp1, temp2
 // scheduler
 const jobQueue = new Set()
+// 副作用执行去重,多次修改操作合并成一次操作(只执行最新的一次)
 const p = Promise.resolve()
 
 let isFlushing = false
@@ -388,26 +402,13 @@ function flushJob() {
 		isFlushing = false
 	})
 }
-const effect = registerEffect(
-	() => {
-		// console.log(reactive_obj.foo)
-	},
-	{
-		// scheduler(effectFun) {
-		// 	jobQueue.add(effectFun)
-		// 	flushJob()
-		// },
-		lazy: true,
-		who: 'test',
-	}
-)
+const effect = registerEffect(() => {}, {
+	lazy: true,
+	who: 'test',
+})
 const effectValue = effect()
 
-// reactive_obj.foo++
-// reactive_obj.foo++
-
 const sum = computed(() => {
-	console.log('sum read')
 	// reactive_obj.bar and reactive_obj.foo will collect this effectFun , when they value changed ,the function will be call
 	return reactive_obj.bar + reactive_obj.foo
 })
@@ -417,9 +418,9 @@ const sum = computed(() => {
 //that good in general,but in this case , we want computed'effect( function(){console.log(sum.value)} ) can be call when computed'getter includes reactive value changed,
 //in this case,we need HM track and trigger computed'effect when computed'get call track and computed includes reactive value changed call trigger (on computed internal effect , we can call trigger(obj,"value") -- obj is we define local variable and value is obj value attribute , if you want , you can eval define you_name_obj and you_name_value)
 registerEffect(() => {
-	console.log(sum.value)
+	// console.log(sum.value)
 })
-
+// 计算属性的test
 reactive_obj.bar++
 reactive_obj.bar++
 reactive_obj.bar++

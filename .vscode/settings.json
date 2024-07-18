@@ -3,5 +3,5 @@
     "prettier.semi": false,
     "prettier.singleQuote": true,
     "prettier.endOfLine": "lf",
-    "fittencode.inlineCompletion.enable": false
+    "fittencode.inlineCompletion.enable": false,
 }

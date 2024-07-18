@@ -23,7 +23,7 @@ function registerEffect(wantRegisterEffectFunction, options = {}) {
   // 注意,这个runEffect函数才是trigger时真正执行的副作用函数,里面包装了我们的一些处理
   // 比如cleanup,cleanup函数是用来清理自身的,也就是找到与自身所关联的属性,然后把自身从这个属性上的依赖清除掉
   // 这样一来,当一个不会被读取的响应式数据发生变化时,它所关联的副作用函数就不会再执行了
-  // eg:
+  // cleanup eg:
   // 比如：(ok:true,text:"text") reactive.ok ? reactive.text : "some"
   // 此时reactive.text会收集副作用函数,我们修改reactive.text的值时副作用函数会被重新执行
   // 这没问题,但是当reactive.ok变为false时,reactive.text的值就不会被读取了
@@ -194,6 +194,40 @@ readonly_obj2.c.d = 5 // 不会触发更新 但是已经修改成功
 delete readonly_obj2.c.d //成功 但是不会触发更新
 // console.log(readonly_obj2.c) //{} //因为是shallowReadonly,所以c的属性还是可以修改的,但是不会触发更新
 
+const readonly_obj3 = readonly({
+  a: 1,
+  b: 2,
+  c: {
+    d: 4,
+  },
+})
+
+registerEffect(() => {
+  // console.log('deep test readonly_obj3.c.d', readonly_obj3.c.d)
+})
+
+// readonly_obj3.c.d = 5 // 因为是深只读,所以会报错
+// delete readonly_obj3.c.d // 因为是深只读,所以会报错
+
+// 代理数组
+// 这句话其实也变相的说明了数组其实就是"对象",毕竟JavaScript万物皆对象
+// 但是数组与普通对象有些不同,因为defineOwnProperty的内部方法不一样
+// 能触发数组的读取操作的方式:
+// 1. 通过索引访问arr[index]
+// 2. 访问数组长度arr.length
+// 3. 通过for...in遍历
+// 4. 通过for...of遍历
+// 5. 数组的原型方法,不改变原数组的一些方法:concat,every,some,filter,find,findIndex,includes,flat,flatMap,
+// indexOf,join,lastIndexOf,map,reduce,reduceRight,slice,toLocaleString,toString,toLocaleString...
+// 会触发读取操作
+// 但是一些改变数组的方法,比如push,pop,shift,unshift这些栈方法,
+// 和一些原型方法sort,reverse,splice,fill,copyWithin,
+const arr1 = reactive([1, 2, 3])
+registerEffect(() => {
+  console.log('arr', arr1)
+})
+arr1[0] = 4
+
 function shallowReactive(obj) {
   return createReactive(obj, true)
 }
@@ -225,9 +259,9 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
       if (isShallow) {
         return res
       }
-      // deep reactive
+      // deep reactive and readonly
       if (res && typeof res === 'object') {
-        return reactive(res)
+        return isReadonly ? readonly(res) : reactive(res)
       }
       return res
     },

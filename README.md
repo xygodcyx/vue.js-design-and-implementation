@@ -8,6 +8,6 @@
 
 ## 项目目录
 
-<!-- 1. [基础知识](./basic/README.md)
-2. [组件系统](./component/README.md)
-3. [路由系统](./router/README.md) -->
+1. [基础知识](./basic/README.md)
+<!-- 2. [组件系统](./component/README.md) -->
+<!-- 3. [路由系统](./router/README.md) -->

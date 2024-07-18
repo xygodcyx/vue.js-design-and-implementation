@@ -97,7 +97,7 @@ const reactive_obj6 = reactive({
 // 测试对象类型的增删
 registerEffect(() => {
   for (const key in reactive_obj6) {
-    console.log(key)
+    // console.log(key)
   }
 })
 reactive_obj6.a = 2
@@ -110,9 +110,9 @@ const reactive_obj7 = reactive({
 })
 registerEffect(() => {
   for (const key in reactive_obj7) {
-    console.log(key)
+    // console.log(key)
   }
-  console.log(reactive_obj7.a)
+  // console.log(reactive_obj7.a)
   // delete reactive_obj7.a
   // console.log(reactive_obj7)
 })
@@ -128,10 +128,57 @@ const reactive_obj8 = reactive({
 })
 
 registerEffect(() => {
-  console.log('deep reactive_obj8.c.d', reactive_obj8.c.d)
+  // console.log('deep reactive_obj8.c.d', reactive_obj8.c.d)
 })
 
 reactive_obj8.c.d = 5 // 未添加deep时无效
+
+const child = {
+  a: 1,
+}
+const parent = {
+  b: 2,
+}
+
+const reactive_obj9 = reactive(child)
+const reactive_obj10 = reactive(parent)
+Object.setPrototypeOf(reactive_obj9, reactive_obj10)
+
+registerEffect(() => {
+  // console.log('reactive_obj9.b', reactive_obj9.b)
+})
+reactive_obj9.b = 10
+
+const readonly_obj = readonly({
+  a: 1,
+  b: 2,
+})
+const readonly_obj2 = shallowReadonly({
+  a: 1,
+  b: 2,
+  c: {
+    d: 4,
+  },
+})
+
+registerEffect(() => {
+  // console.log('readonly_obj.a', readonly_obj.a)
+})
+// readonly_obj.a = 2
+// delete readonly_obj.a
+
+registerEffect(() => {
+  // console.log('readonly_obj2.c.d', readonly_obj2.c.d)
+  // console.log("readonly_obj2's keys", Object.keys(readonly_obj2))
+  // console.log(
+  //   Object.keys(readonly_obj2.c),
+  //   Object.getOwnPropertyDescriptor(readonly_obj2.c, 'd').value
+  // )
+})
+readonly_obj2.c.d = 5 // 不会触发更新 但是已经修改成功
+// console.log(readonly_obj2.c) //{} //因为是shallowReadonly,所以c的属性还是可以修改的,但是不会触发更新
+delete readonly_obj2.c.d //成功 但是不会触发更新
+// console.log(readonly_obj2.c) //{} //因为是shallowReadonly,所以c的属性还是可以修改的,但是不会触发更新
 
 function shallowReactive(obj) {
   return createReactive(obj, true)
@@ -141,11 +188,26 @@ function reactive(obj) {
   return createReactive(obj)
 }
 
-function createReactive(obj, isShallow = false) {
+function readonly(obj) {
+  return createReactive(obj, false, true)
+}
+
+function shallowReadonly(obj) {
+  return createReactive(obj, true, true)
+}
+
+function createReactive(obj, isShallow = false, isReadonly = false) {
   return new Proxy(obj, {
     get(target, key, receiver) {
-      track(target, key)
+      if (key === 'raw') {
+        return target
+      }
+      // 如果是只读对象,那么就不需要收集依赖了,因为只读属性不会被修改,也就不需要触发副作用函数
+      if (!isReadonly) {
+        track(target, key)
+      }
       const res = Reflect.get(target, key, receiver)
+      // shallow reactive
       if (isShallow) {
         return res
       }
@@ -156,6 +218,10 @@ function createReactive(obj, isShallow = false) {
       return res
     },
     set(target, key, newValue, receiver) {
+      if (isReadonly) {
+        console.warn(`this property [${key}] is readonly , you can't set value`)
+        return true
+      }
       // 刚进入get的时候值还没有被修改,因为这是"拦截"
       // 获取旧值,目的是只有当值真的被修改了才执行trigger,
       // 不然只是触发set就执行是有问题的
@@ -163,12 +229,17 @@ function createReactive(obj, isShallow = false) {
       // 一定要先判断修改的是什么,不然修改完了再判断那永远都是SET
       let type = Object.prototype.hasOwnProperty.call(target, key) ? 'SET' : 'ADD'
       const res = Reflect.set(target, key, newValue, receiver)
-      if (
-        oldValue !== newValue &&
-        /* 这两个或全等的目的是排除新旧值都是NaN的情况,只有一个是NaN的话是可以触发的 */
-        (oldValue === oldValue || newValue === newValue)
-      ) {
-        trigger(target, key, type)
+      // 这是为了解决对象修改父级属性时(自身不存在此属性),副作用函数会执行两次的问题
+      // 修改属性时,会先触发子属性的set,但是没有找到此属性,于是会触发父级属性的set
+      // 但是这两次set的receiver都是子级,所以可以通过这种方式判断当前触发的对象是不是与receiver相匹配的对象
+      if (receiver.raw === target) {
+        if (
+          oldValue !== newValue &&
+          /* 这两个或全等的目的是排除新旧值都是NaN的情况,只有一个是NaN的话是可以触发的 */
+          (oldValue === oldValue || newValue === newValue)
+        ) {
+          trigger(target, key, type)
+        }
       }
       return res
     },
@@ -185,6 +256,10 @@ function createReactive(obj, isShallow = false) {
       return Reflect.ownKeys(target)
     },
     deleteProperty(target, key) {
+      if (isReadonly) {
+        console.warn(`this property [${key}] is readonly , you can't delete property`)
+        return true
+      }
       const hadKey = Object.prototype.hasOwnProperty.call(target, key)
       const res = Reflect.deleteProperty(target, key)
       if (hadKey && res) {
@@ -387,7 +462,8 @@ watch(
     let expired = false
     // 作为过期回调函数,其实就是相对于第二次修改监听的值后第一次的回调函数,那第一次的回调函数我们称为过期的回调函数,我们需要对过期的回调函数做一些事情
     // 传入的回调函数其实就是闭包的实际应用,能记住当前作用域
-    // 因为我们注册的过期函数会在执行下次effect时被调用,所以每次执行的过期回调函数其实是上次watch的回调函数注册的过期回调函数，因为是闭包，所以能记住上次的回调函数的作用域
+    // 因为我们注册的过期函数会在执行下次effect时被调用,所以每次执行的过期回调函数其实是上次watch的回调函数注册的过期回调函数，因为是闭包，所以能记住上次的回调函数的作用域(这是重点)
+    // 因此我们可以在下一次执行副作用函数时可以执行上一次的过期函数,以便对竞态问题进行处理
     // 解决竞态问题
     onInvalidate(() => {
       expired = true

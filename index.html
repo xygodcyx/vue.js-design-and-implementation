@@ -1,65 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0" />
     <title>vue</title>
-    <script src="https://code.jquery.com/jquery-3.7.1.js"
-            integrity="sha256-eKhayi8LEQwp4NKxN+CfCh+3qOVUtJn3QNZ0TciWLP4=" crossorigin="anonymous"></script>
-</head>
+    <script
+      src="https://code.jquery.com/jquery-3.7.1.js"
+      integrity="sha256-eKhayi8LEQwp4NKxN+CfCh+3qOVUtJn3QNZ0TciWLP4="
+      crossorigin="anonymous"></script>
+  </head>
 
-<body>
+  <body>
     <div id="app">
-        <span id="data">hello world</span>
-        <!-- <textarea name="" id="" class="prompt">123</textarea>
+      <span id="data">hello world</span>
+      <!-- <textarea name="" id="" class="prompt">123</textarea>
         <span class="msg"></span> -->
     </div>
-</body>
+  </body>
 
-<!-- <script src="rederer.js"></script> -->
-<script src="reactive.js"></script>
-<!-- <script src="test.js"></script> -->
-<!-- <script src="learnMethod.js"></script> -->
-<!-- <script type="importmap">
-  {
-    "imports": {
-      "vue": "https://unpkg.com/vue@3/dist/vue.esm-browser.js"
-    }
-  }
-</script>
-<script type="module">
-    import { createApp } from "vue"
-    const app = {
-        data()
-        {
-            return {
-                msg: "hello world",
-                info: {
-                    name: "xygod",
-                    email: "132@.."
-                }
-            }
-        },
-        mounted()
-        {
-            setTimeout(() =>
-            {
-                this.info.name = "南笙芷"
-            }, 1000)
-        },
-        watch: {
-            info: {
-                handler(newValue, oldValue)
-                {
-                    console.log("newValue", newValue, "oldValue", oldValue)
-                },
-                deep: true
-            }
-        }
-    }
-    const App = createApp(app)
-    App.mount("#app")
-</script> -->
-
+  <!-- <script src="rederer.js"></script> -->
+  <script src="reactive.js"></script>
 </html>

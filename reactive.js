@@ -1,5 +1,8 @@
 'use strict'
 
+// {}型对象的 for...in/of 的依赖收集 唯一键名
+let ITERATE_KEY = Symbol() //Returns a new unique Symbol value.
+
 const bucket = new WeakMap()
 /**
  * this variable is use for collect effect when they call ,
@@ -60,16 +63,28 @@ function registerEffect(wantRegisterEffectFunction, options = {}) {
   return runEffect //registerEffect的返回值是runEffect函数,而runEffect函数的返回值是wantRegisterEffectFunction函数的返回值,所以registerEffect的返回值的返回值(注意是两层返回值)就是wantRegisterEffectFunction函数的返回值,可以用于computed和watch使用
 }
 function cleanup(runEffect) {
-  for (let i = 0; i < runEffect.deps.length; i++) {
-    /**
-     * all depends for effect function
-     * @type {Set} des - des
-     */
-    const des = runEffect.deps[i]
-    des.delete(runEffect)
-  }
+  runEffect.deps.forEach((dep) => {
+    // 这个函数的核心代码,找到自己的所有的父级集合(对象属性绑定过的副作用函数集合),然后在所有的父级集合中删除自己
+    dep.delete(runEffect)
+  })
+  // for (let i = 0; i < runEffect.deps.length; i++) {
+  //   /**
+  //    * all depends for effect function
+  //    * @type {Set} des - des
+  //    */
+  //   const des = runEffect.deps[i]
+  //   des.delete(runEffect)
+  // }
   runEffect.deps.length = 0
 }
+// 分支切换
+// const r = reactive({ ok: true, text: 'text' })
+// registerEffect(() => {
+//   console.log('执行了')
+//   console.log(r.ok ? r.text : 'default')
+// })
+// r.ok = false
+// r.text = 'new text'
 
 const data = { foo: 1, bar: 2 }
 const reactive_obj = new Proxy(data, {
@@ -103,8 +118,7 @@ const reactive_obj3 = new Proxy(data3, {
     return true
   },
 })
-// for in/of 的依赖收集 唯一键名
-let ITERATE_KEY = Symbol() //Returns a new unique Symbol value.
+
 const reactive_obj6 = reactive({
   b: 1,
 })
@@ -224,14 +238,130 @@ registerEffect(() => {
 // 和一些原型方法sort,reverse,splice,fill,copyWithin,
 const arr1 = reactive([1, 2, 3])
 registerEffect(() => {
-  console.log('arr', arr1)
+  // console.log('arr', arr1)
+  // console.log(arr1.length)
+  // console.log(arr1[0])
 })
-arr1[0] = 4
+// registerEffect(() => {
+//   console.log('arr1.length2', arr1.length)
+// })
+// arr1[1] = 2
+// arr1.length = 1
+// const arrSum = computed(() => arr1.reduce((acc, cur) => acc + cur, 0))
+// 计算属性的重新执行
+// 对象的iterator方法
+// const obj = {
+//   a: 0,
+//   [Symbol.iterator]() {
+//     return {
+//       next() {
+//         return {
+//           value: obj.a++,
+//           done: obj.a > 10 ? true : false,
+//         }
+//       },
+//     }
+//   },
+// }
+registerEffect(() => {
+  // console.log(arrSum.value)
+  // for (const key in arr1) {
+  //   console.log(key)
+  // }
+  // console.log('------------------------')
+  // console.log(arr1[99])
+  // for (const value of obj) {
+  //   console.log(value)
+  // }
+})
+// const arr = [1, 2, 3]
+// Symbol.iterator的内部实现
+// arr[Symbol.iterator] = function () {
+//   const target = this
+//   let index = 0
+//   let length = target.length
+//   console.log(target, index, length)
+//   return {
+//     next() {
+//       return {
+//         value: index < length ? target[index] : undefined,
+//         done: index++ >= length,
+//       }
+//     },
+//   }
+// }
+// for (const value of arr) {
+//   console.log(value)
+// }
+registerEffect(() => {
+  // 这个副作用函数会被正确的收集
+  // 为什么呢?首先要明白for...of遍历的原理,它会调用对象的iterator方法,而这个方法内部的大概的实现:
+  // arr[Symbol.iterator] = function () {
+  //   const target = this
+  //   let index = 0
+  //   let length = target.length
+  //   console.log(target, index, length)
+  //   return {
+  //     next() {
+  //       return {
+  //         value: index < length ? target[index] : undefined,
+  //         done: index++ >= length,
+  //       }
+  //     },
+  //   }
+  // }
+  // 而这个方法内会读取数组的length属性和读取每一个元素,所以数组的length数组和其元素都会与副作用函数建立联系
+  // 所以无论是修改数组中已有的元素时还是添加或删除数组的元素而间接或直接的改变数组长度时,都会触发副作用函数的重新执行
+  // 但是也会与Symbol.iterator这种Symbol符号建立关系,这不需要,所以我们在track的时候要去除掉
+  // 如果不去掉的话会出一些意想不到的错误,比如如果你重写了响应式数据的iterator方法,但是没有去掉Symbol.iterator的依赖就会导致
+  /* 
+   let type = Array.isArray(target)
+        ? Number(key) < target.length
+          ? 'SET'
+          : 'ADD'
+        : Object.prototype.hasOwnProperty.call(target, key)
+        ? 'SET'
+        : 'ADD'
+  */
+  // 中的Number转化出现错误(Symbol无法转换为数字),所以我们需要去掉Symbol.iterator的依赖(不收集)
+  // for (const value of arr1 /* arr1.values()也是一样的效果,因为它也是调用iterator方法 */) {
+  //   console.log(value)
+  // }
+})
+// arr1[0] = 2
+// const a = reactive({ a: 1, b: 2 })
+// registerEffect(() => {
+//   for (const key in a) {
+//     console.log(key)
+//   }
+// })
+
+// arr1[1] = 99
+// arr1[99] = 3
+// arr1.length = 1
+
+const arr2 = reactive([1, 2, 3, { a: 1 }])
+registerEffect(() => {
+  // includes方法可以被正常执行,这是因为includes方法会读取数组的length和被查找索引之前的索引属性
+  // 所以会和数组的length属性和被查找属性和其之前的属性建立联系,因为在其之后的属性没有被读取也就没有建立联系了
+  // 但是如果不加任何处理,这只在数组里的元素是原始值时才能被正确查找(结果正确)
+  // 如果数组里的元素有非原始值(对象)时,includes方法的内部在读取属性值时会读取非原始值,而非原始值会被转换为响应式数据
+  // 需要注意的是,在书写arr2.includes(arr2[3])时会将{a:1}建立为响应式对象,而includes内部读取这个对象的时候也会建立一个响应式对象
+  /*if (res && typeof res === 'object') {
+      return isReadonly ? readonly(res) : reactive(res)
+    }
+  */
+  // 而这两个响应式对象是不同的,因为我们的实现是每次返回一个new Proxy对象,这就导致了查找失败
+  // console.log(arr2.includes(2)) // true
+  // console.log(arr2.includes(arr2[3])) or arr2[{a:1}] // false 原因上述
+})
+// arr2[1] = 3 // 会触发副作用函数的重新执行
+// arr2[2] = 4 // 不会触发副作用函数的重新执行
+// arr2.length = 2 // 会触发副作用函数的重新执行
 
 function shallowReactive(obj) {
   return createReactive(obj, true)
 }
-
 function reactive(obj) {
   return createReactive(obj)
 }
@@ -251,7 +381,10 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
         return target
       }
       // 如果是只读对象,那么就不需要收集依赖了,因为只读属性不会被修改,也就不需要触发副作用函数
-      if (!isReadonly) {
+      // 不用担心会影响到{}型对象的for...in/of的依赖收集,因为{}型对象的for...in/of依赖收集是在ownKeys方法中进行的
+      // 哪至于为什么这里需要排除symbol呢?是因为在使用for...in/of遍历数组时(注意,是数组,而不是{}型对象)会读取数组的
+      // Symbol.iterator属性,所以会对Symbol.iterator属性建立依赖,而Symbol.iterator属性本身是不会被修改的,所以不需要收集依赖
+      if (!isReadonly && typeof key !== 'symbol') {
         track(target, key)
       }
       const res = Reflect.get(target, key, receiver)
@@ -275,7 +408,13 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
       // 不然只是触发set就执行是有问题的
       const oldValue = target[key]
       // 一定要先判断修改的是什么,不然修改完了再判断那永远都是SET
-      let type = Object.prototype.hasOwnProperty.call(target, key) ? 'SET' : 'ADD'
+      let type = Array.isArray(target)
+        ? Number(key) < target.length
+          ? 'SET'
+          : 'ADD'
+        : Object.prototype.hasOwnProperty.call(target, key)
+        ? 'SET'
+        : 'ADD'
       const res = Reflect.set(target, key, newValue, receiver)
       // 这是为了解决对象修改父级属性时(自身不存在此属性),副作用函数会执行两次的问题
       // 修改属性时,会先触发子属性的set,但是没有找到此属性,于是会触发父级属性的set
@@ -286,7 +425,11 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
           /* 这两个或全等的目的是排除新旧值都是NaN的情况,只有一个是NaN的话是可以触发的 */
           (oldValue === oldValue || newValue === newValue)
         ) {
-          trigger(target, key, type)
+          // 传入newValue是为了修改数组长度时,需要对索引大于等于新长度(newValue)的元素进行触发副作用函数重新执行
+
+          trigger(target, key, type, newValue)
+        } else {
+          // console.trace('oldValue === newValue')
         }
       }
       return res
@@ -299,7 +442,8 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
       // 因为执行for in/of的时候会调用对象的ownKeys方法,而这个方法
       // 是不用传入key的(当然)所以如果我们想收集这个依赖的话,需要一个
       // 额外的唯一标识来收集这些依赖(用Symbol作为标识,谁还敢说Symbol没用?!)
-      track(target, ITERATE_KEY)
+      // 如果是target是数组的话,直接用length作为键就行了,因为对数组的增删其实就是对length的增删
+      track(target, Array.isArray(target) ? 'length' : ITERATE_KEY)
       // 相应的,触发的时候也要从ITERATE_KEY里读取依赖
       return Reflect.ownKeys(target)
     },
@@ -315,6 +459,69 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
       }
       return res
     },
+  })
+}
+
+/**
+ * will trigger when target[key]-value changed
+ * @param {object} target  - same on track
+ * @param {string | object} key  - same on track
+ * @returns {void}
+ */
+function trigger(target, key, type, newValue) {
+  let desMap = bucket.get(target)
+  let des = desMap && desMap.get(key)
+  const runEffectFunctions = new Set()
+
+  des &&
+    des.forEach((fun) => {
+      if (activeEffect !== fun) {
+        runEffectFunctions.add(fun)
+      }
+    })
+  if (type === 'ADD' || type === 'DELETE') {
+    // 因为对象被添加或者被删除属性的时候,会影响键的个数,所以需要重新执行与ITERATE_KEY有关的副作用函数
+    const iterateDes = desMap && desMap.get(ITERATE_KEY)
+    iterateDes &&
+      iterateDes.forEach((fun) => {
+        if (activeEffect !== fun) {
+          runEffectFunctions.add(fun)
+        }
+      })
+  }
+  // 处理数组的情况 , arr = ["bar"] 但是复制的时候 arr[1] = "foo" 于是就是数组长度改变了(规范),需要触发length的副作用函数重新执行
+  if (type === 'ADD' && Array.isArray(target)) {
+    const lengthEffects = desMap && desMap.get('length')
+    lengthEffects &&
+      lengthEffects.forEach((fun) => {
+        if (activeEffect !== fun) {
+          runEffectFunctions.add(fun)
+        }
+      })
+  }
+  // 这是处理直接修改数组长度时,需要触发索引大于等于新长度(newValue)的元素的副作用函数重新执行
+  if (key == 'length' && Array.isArray(target)) {
+    // 这里的desMap的值就是与当前数组相关的副作用函数map,map的key是数组的索引,值是与索引相关的副作用函数集合
+    // 每一个索引对应1个或者多个副作用函数
+    desMap &&
+      desMap.forEach((effects, key) => {
+        // 这里的key不是length,而是数组中被绑定了副作用函数的索引
+        if (key >= newValue) {
+          effects.forEach((effect) => {
+            if (activeEffect !== effect) {
+              runEffectFunctions.add(effect)
+            }
+          })
+        }
+      })
+  }
+
+  runEffectFunctions.forEach((effectFun) => {
+    if (effectFun.options.scheduler) {
+      effectFun.options.scheduler(effectFun)
+    } else {
+      effectFun()
+    }
   })
 }
 
@@ -350,42 +557,6 @@ function track(target, key) {
   activeEffect.deps.push(des)
 }
 
-/**
- * will trigger when target[key]-value changed
- * @param {object} target  - same on track
- * @param {string | object} key  - same on track
- * @returns {void}
- */
-function trigger(target, key, type) {
-  let desMap = bucket.get(target)
-  let des = desMap && desMap.get(key)
-  const runEffectFunctions = new Set()
-
-  des &&
-    des.forEach((fun) => {
-      if (activeEffect !== fun) {
-        runEffectFunctions.add(fun)
-      }
-    })
-  if (type === 'ADD' || type === 'DELETE') {
-    // 因为对象被添加或者被删除属性的时候,会影响键的个数,所以需要重新执行与ITERATE_KEY有关的副作用函数
-    const iterateDes = desMap && desMap.get(ITERATE_KEY)
-    iterateDes &&
-      iterateDes.forEach((fun) => {
-        if (activeEffect !== fun) {
-          runEffectFunctions.add(fun)
-        }
-      })
-  }
-  runEffectFunctions.forEach((effectFun) => {
-    if (effectFun.options.scheduler) {
-      effectFun.options.scheduler(effectFun)
-    } else {
-      effectFun()
-    }
-  })
-}
-
 // computed
 function computed(getter) {
   let value
@@ -401,9 +572,8 @@ function computed(getter) {
       if (!dirty) {
         dirty = true
         // we HM call trigger call computed'effect when getter includes reactive value changed
-        // 此时的依赖收集是我们手动进行的,并没有进行拦截,但是computed的重新触发需要的时机是computed包含的属性
-        // 发生改变时,所以我们需要这个调度器来对每个响应式属性被修改时应该做些什么进行处理
-        // 就比如手动执行trigger来重新运行getter函数
+
+        // 在值脏了以后手动触发副作用函数
         trigger(obj, 'value')
       }
     },
@@ -418,6 +588,7 @@ function computed(getter) {
         value = effect() //这个函数的返回值就是传入的getter函数的返回值,所以computed函数的返回值就是getter函数的返回值,但中间我们做了computed的一些处理(依赖收集)
         dirty = false
         // we HM call track collect computed'effect when computed'value get
+        // 手动收集计算属性的依赖(在registerEffect函数里传入的函数)
         track(obj, 'value')
       }
       return value

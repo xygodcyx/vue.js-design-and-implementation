@@ -3,6 +3,28 @@
 // {}型对象的 for...in/of 的依赖收集 唯一键名
 let ITERATE_KEY = Symbol() //Returns a new unique Symbol value.
 
+// 为了解决类似于数组includes方法查找非原始值会将两个不同的代理对象(或一个代理对象一个原始值,比如直接在includes里传入非原始值{a:1}而不是通过响应式数据的索引)
+// 进行比较,而这就导致了和预期不同的结果(明明键值对完全一样,但是不相等--new proxy的原因,既然new proxy无法改变,那么就
+// 用一个"缓存"来把之前已经代理过的对象存起来,然后取的时候直接从"缓存"里取就行了 reactiveMap
+const reactiveMap = new Map()
+// 这是为了重写数组的includes方法,让arr2.includes({a:1})也可以被正确查找
+// 思路就是在proxy拦截get的时候,判断当前操作数组的key(arr.includes)在不在这个我们覆写的对象上,在就返回我们覆写的这个对象
+// 这种方法的可行性的依据是数组在读取原型方法时,实际上是读取了属性(includes,indexOf...),于是我们可以进行拦截这些(key)
+// 然后返回我们自己定义的includes方法,这样就实现了数组的includes方法的覆写
+const arrayInstrumentations = {}
+;['includes', 'indexOf', 'find'].forEach((key) => {
+  const originalMethod = Array.prototype[key]
+  // 其中this是代理数组,因为我们用Reflect.get将this改变为代理对象(receiver,即实际调用对象而不是原始对象)
+  arrayInstrumentations[key] = function (...args) {
+    let res = originalMethod.apply(this, args)
+    // 如果没有找到,说明传来的参数不是代理对象而是一个原始值,所有我们需要获取代理对象的原始值(data.raw)
+    if (!res) {
+      res = originalMethod.apply(this.raw, args)
+    }
+    return res
+  }
+})
+
 const bucket = new WeakMap()
 /**
  * this variable is use for collect effect when they call ,
@@ -339,8 +361,9 @@ registerEffect(() => {
 // arr1[1] = 99
 // arr1[99] = 3
 // arr1.length = 1
-
-const arr2 = reactive([1, 2, 3, { a: 1 }])
+const obj = { a: 1 }
+const arr2 = reactive([1, 2, 3, obj])
+const a = [1]
 registerEffect(() => {
   // includes方法可以被正常执行,这是因为includes方法会读取数组的length和被查找索引之前的索引属性
   // 所以会和数组的length属性和被查找属性和其之前的属性建立联系,因为在其之后的属性没有被读取也就没有建立联系了
@@ -350,10 +373,19 @@ registerEffect(() => {
   /*if (res && typeof res === 'object') {
       return isReadonly ? readonly(res) : reactive(res)
     }
-  */
-  // 而这两个响应式对象是不同的,因为我们的实现是每次返回一个new Proxy对象,这就导致了查找失败
+    */
+  // 而这两个响应式对象是不同的,因为我们的实现是每次返回一个new Proxy对象,这就导致了查找失败 所以我们需要做一个缓存 reactiveMap
   // console.log(arr2.includes(2)) // true
-  // console.log(arr2.includes(arr2[3])) or arr2[{a:1}] // false 原因上述
+  // console.log(arr2.includes(arr2[3])) // false 原因上述
+  console.log(arr2.includes(obj)) // false 原因下述
+  // 还有一种情况就是:arr.includes(obj)直接拿原始对象去查找,这就相当于用原始对象和响应式数据作对比,肯定是false,但我们期望是true
+  // 注意不要直接传入{a:1},因为obj !== {a:1} 这是两个对象,这不是框架的问题而是js的机制,在开发时也要注意
+  // 所以我们需要重写includes方法 arrayInstrumentations
+  // 而有些方法不需要特殊处理即可正常使用,那就是读取值
+  // 但是如果和对象做比较,那又要处理了
+  console.log(arr2.find((item) => item === obj))
+  // console.log(arr2.find((item) => item.a === 1)) // 正确
+  // console.log(arr2.filter((item) => item.a === 1)) // 正确
 })
 // arr2[1] = 3 // 会触发副作用函数的重新执行
 // arr2[2] = 4 // 不会触发副作用函数的重新执行
@@ -362,8 +394,14 @@ registerEffect(() => {
 function shallowReactive(obj) {
   return createReactive(obj, true)
 }
+
 function reactive(obj) {
-  return createReactive(obj)
+  let proxy = reactiveMap.get(obj)
+  if (!proxy) {
+    proxy = createReactive(obj)
+    reactiveMap.set(obj, proxy)
+  }
+  return proxy
 }
 
 function readonly(obj) {
@@ -379,6 +417,10 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
     get(target, key, receiver) {
       if (key === 'raw') {
         return target
+      }
+      // 将arr.incldes重定向到arrayInstrumentations.includes
+      if (Array.isArray(target) && arrayInstrumentations.hasOwnProperty(key)) {
+        return Reflect.get(arrayInstrumentations, key, receiver)
       }
       // 如果是只读对象,那么就不需要收集依赖了,因为只读属性不会被修改,也就不需要触发副作用函数
       // 不用担心会影响到{}型对象的for...in/of的依赖收集,因为{}型对象的for...in/of依赖收集是在ownKeys方法中进行的

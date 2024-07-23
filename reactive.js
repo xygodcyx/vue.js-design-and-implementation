@@ -2,6 +2,8 @@
 
 // {}型对象的 for...in/of 的依赖收集 唯一键名
 let ITERATE_KEY = Symbol() //Returns a new unique Symbol value.
+// 可以通过这个key找到响应式数据的原始数据,因为是全局唯一,所以不可能重复
+let RAW_KEY = Symbol() //Returns a new unique Symbol value.
 
 // 为了解决类似于数组includes方法查找非原始值会将两个不同的代理对象(或一个代理对象一个原始值,比如直接在includes里传入非原始值{a:1}而不是通过响应式数据的索引)
 // 进行比较,而这就导致了和预期不同的结果(明明键值对完全一样,但是不相等--new proxy的原因,既然new proxy无法改变,那么就
@@ -19,9 +21,9 @@ const arrayInstrumentations = {}
   // 其中this是代理数组,因为我们用Reflect.get将this改变为代理对象(receiver,即实际调用对象而不是原始对象)
   arrayInstrumentations[method] = function (...args) {
     let res = originalMethod.apply(this, args)
-    // 如果没有找到,说明传来的参数不是代理对象而是一个原始值,所有我们需要获取代理对象的原始值(data.raw)
+    // 如果没有找到,说明传来的参数不是代理对象而是一个原始值,所有我们需要获取代理对象的原始值(data.RAW_KEY)
     if (res === false || res === -1 || res === undefined) {
-      res = originalMethod.apply(this.raw, args)
+      res = originalMethod.apply(this.RAW_KEY, args)
     }
     return res
   }
@@ -38,31 +40,35 @@ const arrayInstrumentations = {}
 // *set和map的方法重写
 const mutableInstrumentations = {
   // set
-  add(key) {
-    const target = this.raw
-    const hasKey = target.has(key)
-    let res = target.add(key)
+  add(value) {
+    const target = this[RAW_KEY]
+    const hasKey = target.has(value)
+    // 和map类似,要避免数据污染就要将准备传入的响应式数据转换为原始值
+    // 数据污染:将响应式数据赋值给原始数据的行为
+    const rawValue = value[RAW_KEY] || value
+    let res = target.add(rawValue)
     if (!hasKey) {
       // 这里依然要写key,不能写ITERATE_KEY,因为这是专注于触发一个属性的副作用函数,并且类型要写上
       // 因为我们之前在写普通对象时,处理了ADD和DELETE的情况,这里可以复用
-      trigger(target, key, 'ADD')
+      trigger(target, value, 'ADD')
     }
     return res
   },
-  delete(key) {
-    const target = this.raw
-    const hadKey = target.has(key)
-    let res = target.delete(key)
+  delete(value) {
+    const target = this[RAW_KEY]
+    const hadKey = target.has(value)
+    let res = target.delete(value)
     if (hadKey) {
       // 这里依然要写key,不能写ITERATE_KEY,因为这是专注于触发一个属性的副作用函数,并且类型要写上
       // 因为我们之前在写普通对象时,处理了ADD和DELETE的情况,这里可以复用
-      trigger(target, key, 'DELETE')
+      // 删除的情况就不用处理数据污染了,因为数据侮辱的原因是把响应式数据赋值到原始数据上,因为改变了响应式数据,原始数据也会跟着变
+      trigger(target, value, 'DELETE')
     }
     return res
   },
   // map
   get(key) {
-    const target = this.raw
+    const target = this[RAW_KEY]
     const had = target.has(key)
     // 追踪map的key,因为map可以通过get获取数据,所以可以追踪特定key
     track(target, key)
@@ -72,10 +78,15 @@ const mutableInstrumentations = {
     }
   },
   set(key, value) {
-    const target = this.raw
+    const target = this[RAW_KEY]
     const had = target.has(key)
+    // 设置原始数据为传来的value(可能是响应式数据也可能是原始数据)
+    // 如果是响应式数据那它身上就会有RAW_KEY属性,而原始数据没有RAW_KEY属性
+    const rawValue = value[RAW_KEY] || value
     const oldValue = target.get(key)
-    target.set(key, value)
+    // 我们直接将原始数据复制给key
+    // target.set(key, value)
+    target.set(key, rawValue)
     if (!had) {
       // ADD
       trigger(target, key, 'ADD')
@@ -397,8 +408,7 @@ registerEffect(() => {
   // 所以无论是修改数组中已有的元素时还是添加或删除数组的元素而间接或直接的改变数组长度时,都会触发副作用函数的重新执行
   // 但是也会与Symbol.iterator这种Symbol符号建立关系,这不需要,所以我们在track的时候要去除掉
   // 如果不去掉的话会出一些意想不到的错误,比如如果你重写了响应式数据的iterator方法,但是没有去掉Symbol.iterator的依赖就会导致
-  /* 
-   let type = Array.isArray(target)
+  /*let type = Array.isArray(target)
         ? Number(key) < target.length
           ? 'SET'
           : 'ADD'
@@ -518,7 +528,7 @@ registerEffect(() => {
 // 而activeEffect的值始终等于当前正在执行的副作用函数，所以最后执行的副作用函数也是我们传入的函数
 // newM.set('key', 2)
 
-// map的污染问题测试
+// *map的污染问题测试
 // 注意观察,如果我们不加处理,用户就可以书写以下的代码,即:用原始Map操作响应式数据,这是很不对的
 // 因为原始数据和响应式数据应该是分开的,不应该混淆,不然用户既可以使用原始数据又可以使用响应式数据,这会导致代码混乱
 // 理想情况应该是我们操作原始数据时期望应该是不会触发响应式更新，而操作响应式数据时期望会触发响应式更新
@@ -527,20 +537,60 @@ registerEffect(() => {
 // 所以在我们使用map1获取newMap2时，实际上获取到的是响应式数据newMap2，那么自然就会触发相应的更新了（与size关联的副作用函数）
 // 因为在注册副作用函数时，我们通过map1.get("newMap2")拿到了这个响应式数据,然后将它的size和副作用函数绑定在了一起
 // 那么在对map进行set一个不存在的属性时,就会改变size的长度,也就会导致更新啦
-// 解决办法是如果一个map要设置一个响应式数据为它的value,那么就设置响应式数据的原始数据
+// 解决办法是如果一个map要设置一个响应式数据为它的value,那么就把响应式数据的原始数据设置给它,不用担心这样会导致响应式丢失
+// 因为如果一个map能使用我们重写的方法,那么它一定是响应式数据,而我们做了深相应处理,所以我们可以保证响应式数据不会丢失
+// 而且我们也可以保证如果一个原始对象想将一个响应式数据设置为一个value,我们也可以避免原始数据中某一个key的值是响应式数据
+// 这样就解决了原始数据被污染的问题
 // 下面是一个与污染问题无关的总结,恰好想到
 // 这里多说一个,如果set了一个已经存在的key,不用担心不会触发更新,因为我们在get的时候已经追踪了这个key,
 // 所以set的时候只要之前用到了这个key(即调用了get方法),那么就会收集与key相关的依赖,然后在set的时候通过
 // 设置type为SET（语义）来触发副作用函数的重新执行（在trigger里）
-const map1 = new Map()
-const newMap1 = reactive(map1)
-const map2 = new Map()
-const newMap2 = reactive(map2)
-newMap1.set('newMap2', newMap2) //这一句
+// const map1 = new Map()
+// const newMap1 = reactive(map1)
+// const map2 = new Map()
+// const newMap2 = reactive(map2)
+// 这句代码会将newMap2间接的设置到map1上,因为我们重写了map的set的方法(这本身没问题,有问题的是通过原始数据访问的响应式数据也会触发更新,这是不期望的
+// 原因上述
+// newMap1.set('newMap2', newMap2)
 registerEffect(() => {
-  console.log(map1.get('newMap2').size)
+  // console.log(map1.get('newMap2').size)
 })
-map1.get('newMap2').set('foo', 1)
+// 经过map的防污染处理,这句代码执行完毕后,副作用函数不会再执行了,因为它是完全的原始数据,和我们所写的响应式系统没有一点关系
+// map1.get('newMap2').set('foo', 1)
+// *测试Set的数据污染,测出问题原因类似,已解决
+const set1 = new Set()
+const newSet1 = reactive(set1)
+const set2 = new Set()
+const newSet2 = reactive(set2)
+newSet1.add(newSet2)
+registerEffect(() => {
+  console.log(set1.values().next().value.size)
+})
+set1.forEach((item) => {
+  if (item === newSet2) {
+    item.add('foo')
+  }
+})
+// *测试数组的数据污染,测出问题原因类似,已解决
+// const arr3 = [1, 2, 3]
+// const newArr3 = reactive(arr3)
+// const arr4 = [4]
+// const newArr4 = reactive(arr4)
+// newArr3.push(newArr4)
+// registerEffect(() => {
+//   console.log(arr3[3].length)
+// })
+// arr3[3].push(5)
+// *测试对象的数据污染,测出问题原因类似,都是访问到了响应式数据导致的数据污染,已解决
+// const obj1 = { a: 1 }
+// const newObj1 = reactive(obj1)
+// const obj2 = { b: 2 }
+// const newObj2 = reactive(obj2)
+// newObj1.c = newObj2
+// registerEffect(() => {
+// console.log(obj1.c.b)
+// })
+// obj1.c.b = 3
 
 function shallowReactive(obj) {
   return createReactive(obj, true)
@@ -566,7 +616,7 @@ function shallowReadonly(obj) {
 function createReactive(obj, isShallow = false, isReadonly = false) {
   return new Proxy(obj, {
     get(target, key, receiver) {
-      if (key === 'raw') {
+      if (key === RAW_KEY) {
         return target
       }
 
@@ -585,7 +635,7 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
         return mutableInstrumentations[key]
       }
 
-      // *普通对象的代理
+      // *普通对象和数组的代理
       // return Reflect.get(target, key, receiver)
 
       // 将arr.incldes重定向到arrayInstrumentations.includes
@@ -619,6 +669,8 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
       // 获取旧值,目的是只有当值真的被修改了才执行trigger,
       // 不然只是触发set就执行是有问题的
       const oldValue = target[key]
+      // 也是一样的处理方式,数组和普通对象,防止数据污染
+      const rawValue = newValue[RAW_KEY] || newValue
       // 一定要先判断修改的是什么,不然修改完了再判断那永远都是SET
       let type = Array.isArray(target)
         ? Number(key) < target.length
@@ -627,11 +679,11 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
         : Object.prototype.hasOwnProperty.call(target, key)
         ? 'SET'
         : 'ADD'
-      const res = Reflect.set(target, key, newValue, receiver)
+      const res = Reflect.set(target, key, rawValue, receiver)
       // 这是为了解决对象修改父级属性时(自身不存在此属性),副作用函数会执行两次的问题
       // 修改属性时,会先触发子属性的set,但是没有找到此属性,于是会触发父级属性的set
       // 但是这两次set的receiver都是子级,所以可以通过这种方式判断当前触发的对象是不是与receiver相匹配的对象
-      if (receiver.raw === target) {
+      if (receiver[RAW_KEY] === target) {
         if (
           oldValue !== newValue &&
           /* 这两个或全等的目的是排除新旧值都是NaN的情况,只有一个是NaN的话是可以触发的 */

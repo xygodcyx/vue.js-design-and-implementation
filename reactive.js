@@ -11,19 +11,80 @@ const reactiveMap = new Map()
 // 思路就是在proxy拦截get的时候,判断当前操作数组的key(arr.includes)在不在这个我们覆写的对象上,在就返回我们覆写的这个对象
 // 这种方法的可行性的依据是数组在读取原型方法时,实际上是读取了属性(includes,indexOf...),于是我们可以进行拦截这些(key)
 // 然后返回我们自己定义的includes方法,这样就实现了数组的includes方法的覆写
+let shouldTrack = true
+// *数组的方法重写
 const arrayInstrumentations = {}
-;['includes', 'indexOf', 'find'].forEach((key) => {
-  const originalMethod = Array.prototype[key]
+;['includes', 'indexOf', 'lastIndexOf', 'find', 'findIndex'].forEach((method) => {
+  const originalMethod = Array.prototype[method]
   // 其中this是代理数组,因为我们用Reflect.get将this改变为代理对象(receiver,即实际调用对象而不是原始对象)
-  arrayInstrumentations[key] = function (...args) {
+  arrayInstrumentations[method] = function (...args) {
     let res = originalMethod.apply(this, args)
     // 如果没有找到,说明传来的参数不是代理对象而是一个原始值,所有我们需要获取代理对象的原始值(data.raw)
-    if (!res) {
+    if (res === false || res === -1 || res === undefined) {
       res = originalMethod.apply(this.raw, args)
     }
     return res
   }
 })
+;['push', 'pop', 'shift', 'unshift', 'splice'].forEach((method) => {
+  const originalMethod = Array.prototype[method]
+  arrayInstrumentations[method] = function (...args) {
+    shouldTrack = false
+    let res = originalMethod.apply(this, args)
+    shouldTrack = true
+    return res
+  }
+})
+// *set和map的方法重写
+const mutableInstrumentations = {
+  // set
+  add(key) {
+    const target = this.raw
+    const hasKey = target.has(key)
+    let res = target.add(key)
+    if (!hasKey) {
+      // 这里依然要写key,不能写ITERATE_KEY,因为这是专注于触发一个属性的副作用函数,并且类型要写上
+      // 因为我们之前在写普通对象时,处理了ADD和DELETE的情况,这里可以复用
+      trigger(target, key, 'ADD')
+    }
+    return res
+  },
+  delete(key) {
+    const target = this.raw
+    const hadKey = target.has(key)
+    let res = target.delete(key)
+    if (hadKey) {
+      // 这里依然要写key,不能写ITERATE_KEY,因为这是专注于触发一个属性的副作用函数,并且类型要写上
+      // 因为我们之前在写普通对象时,处理了ADD和DELETE的情况,这里可以复用
+      trigger(target, key, 'DELETE')
+    }
+    return res
+  },
+  // map
+  get(key) {
+    const target = this.raw
+    const had = target.has(key)
+    // 追踪map的key,因为map可以通过get获取数据,所以可以追踪特定key
+    track(target, key)
+    if (had) {
+      const res = target.get(key)
+      return typeof res === 'object' ? reactive(res) : res
+    }
+  },
+  set(key, value) {
+    const target = this.raw
+    const had = target.has(key)
+    const oldValue = target.get(key)
+    target.set(key, value)
+    if (!had) {
+      // ADD
+      trigger(target, key, 'ADD')
+    } else if (oldValue !== value || (oldValue !== oldValue && value !== value)) {
+      // SET
+      trigger(target, key, 'SET')
+    }
+  },
+}
 
 const bucket = new WeakMap()
 /**
@@ -377,19 +438,109 @@ registerEffect(() => {
   // 而这两个响应式对象是不同的,因为我们的实现是每次返回一个new Proxy对象,这就导致了查找失败 所以我们需要做一个缓存 reactiveMap
   // console.log(arr2.includes(2)) // true
   // console.log(arr2.includes(arr2[3])) // false 原因上述
-  console.log(arr2.includes(obj)) // false 原因下述
+  // console.log(arr2.includes(obj)) // false 原因下述
   // 还有一种情况就是:arr.includes(obj)直接拿原始对象去查找,这就相当于用原始对象和响应式数据作对比,肯定是false,但我们期望是true
   // 注意不要直接传入{a:1},因为obj !== {a:1} 这是两个对象,这不是框架的问题而是js的机制,在开发时也要注意
   // 所以我们需要重写includes方法 arrayInstrumentations
   // 而有些方法不需要特殊处理即可正常使用,那就是读取值
   // 但是如果和对象做比较,那又要处理了
-  console.log(arr2.find((item) => item === obj))
+  // arr的测试
+  // console.log(arr2.find((item) => item === obj))
+  // console.log(arr2.indexOf(obj))
   // console.log(arr2.find((item) => item.a === 1)) // 正确
   // console.log(arr2.filter((item) => item.a === 1)) // 正确
+  // push pop shift unshift...
+  // 第一个副作用函数
+  // arr2.push(2)
+  // arr2.splice(1, 2, 2)
+  // console.log(arr2.length)
 })
+// 很奇怪,写上两个不同的副作用函数,会导致栈溢出maximum
+// 这是因为在第一个副作用函数里使用了push方法,而这个方法根据规范可以知道,它会读取和修改数组的length属性,也就是说第一个副作用函数和length建立了联系
+// 但是只有一个副作用函数的话是不会导致栈溢出的,因为我们做了处理:如果当前准备执行的副作用函数和当前激活的副作用函数相同,那就不执行trigger
+// 这是为了防止在副作用函数里对属性进行修改导致的死循环(重复调用自身),因为修改属性会触发set,而set又会触发副作用函数
+// 回到这个问题,那为什么写两个副作用函数就会有问题了呢?这是因为在第一个副作用函数执行完毕时,与length建立联系后,第二个副作用函数开始执行
+// 而第二个副作用函数又会读取和修改length属性,于是在读取length的时候与副作用函数与length建立了联系,别忘了,紧接着,push也会进行修改
+// 数组的length属性，这就导致了要把与length属性相关联的副作用函数都执行一遍(此时第二个函数还没有执行完毕)，
+// 而第一个副作用函数就会被执行，而第一个副作用函数又会进行读取和修改length属性,
+// 而此时,第二个副作用函数也已经与length建立了联系,于是第一个副作用函数在修改的时候,又会导致第二个副作用函数
+// 执行(此时第一个副作用函数也没有执行完毕),于是在一个函数还没有执行完毕的时候,又会导致另一个函数的执行,如此循环往复,最终导致了栈溢出
+// 所以我们不需要对数组的在执行栈方法时对length进行依赖收集,因为push的语义是修改而不是读取,我们不希望与length建立联系
+// 所以需要一个shouldTrack变量来表示当前的副作用函数是否需要被追踪,如果不需要的话,就不收集依赖(在栈方法执行前为false,执行完后为true)
+registerEffect(() => {
+  // 第二个副作用函数
+  // arr2.push(1)
+  // arr2.splice(1)
+  // console.log(arr2.length)
+})
+// arr2.push(3)
+// console.log(arr2)
+const reactive_obj11 = reactive({ a: 1 })
+// 不只是数组,对象的属性在两个副作用函数里出现时也会导致栈溢出
+// registerEffect(() => {
+//   console.log(reactive_obj11.a++)
+// })
+// registerEffect(() => {
+//   console.log(reactive_obj11.a++)
+// })
 // arr2[1] = 3 // 会触发副作用函数的重新执行
+
 // arr2[2] = 4 // 不会触发副作用函数的重新执行
 // arr2.length = 2 // 会触发副作用函数的重新执行
+
+// set的测试
+// const set = new Set([1, 2])
+// const newP = reactive(set)
+// 也会报错,类似size的报错,原因类似,但无法通过直接拦截get然后直接更改this解决,原因是函数的this执行时其调用的对象,而真正调用的对象是
+// newP,而你只更改了delete的this,没有更改调用后的this,所以也是不行的,解决办法是用bind进行手动绑定this
+registerEffect(() => {
+  // 这段代码如果不加处理,会导致:
+  // Uncaught TypeError: Method get Set.prototype.size called on incompatible receiver #<Set>
+  // 这个错误,这是因为我们在获取set的size属性时,在内部会先检查"this"上是否存在[[SetData]]内部槽,而代理后的set的"this"是
+  // receiver是代理后的set,而代理对象不存在这个内部槽,于是就会报错,解决办法就是重定向this为原始set
+  // console.log(newP.size)
+})
+// 经过重写后的set方法,可以正确触发副作用函数的重新执行
+// 为什么可以正确触发呢?因为size属性时被ITERATE_KEY所关联的,然后我们在代理普通对象的时候写了
+// 处理ITERATE_KEY的情况,然后我们只需要在执行add和delete的时候传入type(ADD或DELETE即可),在trigger的时候就能正确取出
+// ITERATE_KEY所关联的副作用函数,然后加到副作用函数执行栈里,这样于size(代理size并且与ITERATE_KEY关联)所关联的副作用函数就会被执行了
+// newP.delete(1)
+// map的测试
+// const map = new Map([['key', 1]])
+// const newM = reactive(map)
+registerEffect(() => {
+  // console.log(newM.get('key'))
+})
+// 在重写了map的get和set后,可以正确触发响应式
+// 原因是在get里我们追踪了传入的key,然后key就与副作用函数建立了联系,这里要想清楚,副作用函数始终是我们在registerEffect
+// 里传入的函数（尽管经过了我们的一些包装，但是在用户的感知上是执行的传入的函数参数，
+// 而不是经过我们各种中转和改变this指向或者代理等等,不要混淆了,因为我们是把activeEffect加到key的依赖集合里的
+// 而activeEffect的值始终等于当前正在执行的副作用函数，所以最后执行的副作用函数也是我们传入的函数
+// newM.set('key', 2)
+
+// map的污染问题测试
+// 注意观察,如果我们不加处理,用户就可以书写以下的代码,即:用原始Map操作响应式数据,这是很不对的
+// 因为原始数据和响应式数据应该是分开的,不应该混淆,不然用户既可以使用原始数据又可以使用响应式数据,这会导致代码混乱
+// 理想情况应该是我们操作原始数据时期望应该是不会触发响应式更新，而操作响应式数据时期望会触发响应式更新
+// 出现这种问题的原因是我们用原始数据进行set操作时(newMap1.set('newMap2', newMap2))会把响应式数据(newMap2)原封不动的设置在
+// 响应式数据newMap1上，而我们的实现是重写了Map的set和get方法，它们的数据流向最终都会是原始数据，所以原始数据map1上也存在newMap2
+// 所以在我们使用map1获取newMap2时，实际上获取到的是响应式数据newMap2，那么自然就会触发相应的更新了（与size关联的副作用函数）
+// 因为在注册副作用函数时，我们通过map1.get("newMap2")拿到了这个响应式数据,然后将它的size和副作用函数绑定在了一起
+// 那么在对map进行set一个不存在的属性时,就会改变size的长度,也就会导致更新啦
+// 解决办法是如果一个map要设置一个响应式数据为它的value,那么就设置响应式数据的原始数据
+// 下面是一个与污染问题无关的总结,恰好想到
+// 这里多说一个,如果set了一个已经存在的key,不用担心不会触发更新,因为我们在get的时候已经追踪了这个key,
+// 所以set的时候只要之前用到了这个key(即调用了get方法),那么就会收集与key相关的依赖,然后在set的时候通过
+// 设置type为SET（语义）来触发副作用函数的重新执行（在trigger里）
+const map1 = new Map()
+const newMap1 = reactive(map1)
+const map2 = new Map()
+const newMap2 = reactive(map2)
+newMap1.set('newMap2', newMap2) //这一句
+registerEffect(() => {
+  console.log(map1.get('newMap2').size)
+})
+map1.get('newMap2').set('foo', 1)
 
 function shallowReactive(obj) {
   return createReactive(obj, true)
@@ -418,13 +569,32 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
       if (key === 'raw') {
         return target
       }
+
+      // *Set和Map的代理
+      const targetType = target.toString().slice(8, -1) //Object,Map,Set...
+      if (targetType === 'Map' || targetType === 'Set') {
+        if (key === 'size') {
+          // 为什么要用ITERATE_KEY作为key呢?因为size的会被set的新增和删除操作影响,所以我们不能只绑定某个属性,要绑定一个唯一的
+          // 在新增和删除后都触发副作用函数重新执行
+          track(target, ITERATE_KEY)
+          return Reflect.get(target, key, target)
+        }
+        // 改变this执行可以使得代理set的方法可以正常执行,但是无法满足我们响应式化set的要求,所以我们需要重写add和set方法
+        // 使其在执行后能够触发副作用函数重新执行
+        // return target[key].bind(target)
+        return mutableInstrumentations[key]
+      }
+
+      // *普通对象的代理
+      // return Reflect.get(target, key, receiver)
+
       // 将arr.incldes重定向到arrayInstrumentations.includes
       if (Array.isArray(target) && arrayInstrumentations.hasOwnProperty(key)) {
         return Reflect.get(arrayInstrumentations, key, receiver)
       }
       // 如果是只读对象,那么就不需要收集依赖了,因为只读属性不会被修改,也就不需要触发副作用函数
-      // 不用担心会影响到{}型对象的for...in/of的依赖收集,因为{}型对象的for...in/of依赖收集是在ownKeys方法中进行的
-      // 哪至于为什么这里需要排除symbol呢?是因为在使用for...in/of遍历数组时(注意,是数组,而不是{}型对象)会读取数组的
+      // 不用担心会影响到{}型对象的for...in/of的依赖收集,因为{}型对象的for...in/of依赖收集是在ownKeys方法中进行的(我们用了ITERATE_KEY作为键名来标识)
+      // 那至于为什么这里需要排除symbol呢?是因为在使用for...in/of遍历数组时(注意,是数组,而不是{}型对象)会读取数组的
       // Symbol.iterator属性,所以会对Symbol.iterator属性建立依赖,而Symbol.iterator属性本身是不会被修改的,所以不需要收集依赖
       if (!isReadonly && typeof key !== 'symbol') {
         track(target, key)
@@ -523,6 +693,7 @@ function trigger(target, key, type, newValue) {
     })
   if (type === 'ADD' || type === 'DELETE') {
     // 因为对象被添加或者被删除属性的时候,会影响键的个数,所以需要重新执行与ITERATE_KEY有关的副作用函数
+    // map和set也可以用到这个
     const iterateDes = desMap && desMap.get(ITERATE_KEY)
     iterateDes &&
       iterateDes.forEach((fun) => {
@@ -574,7 +745,7 @@ function trigger(target, key, type, newValue) {
  * @returns {void}
  */
 function track(target, key) {
-  if (!activeEffect) {
+  if (!activeEffect || !shouldTrack) {
     return
   }
   // bucket.add(activeEffect);

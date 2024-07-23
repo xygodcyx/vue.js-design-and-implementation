@@ -4,38 +4,63 @@
 			"path": "reactive.js",
 			"bookmarks": [
 				{
-					"line": 46,
+					"line": 15,
+					"column": 19,
+					"label": ""
+				},
+				{
+					"line": 38,
+					"column": 34,
+					"label": ""
+				},
+				{
+					"line": 107,
 					"column": 29,
 					"label": ""
 				},
 				{
-					"line": 414,
+					"line": 446,
+					"column": 11,
+					"label": ""
+				},
+				{
+					"line": 490,
+					"column": 10,
+					"label": ""
+				},
+				{
+					"line": 507,
+					"column": 3,
+					"label": ""
+				},
+				{
+					"line": 565,
 					"column": 14,
 					"label": ""
 				},
 				{
-					"line": 512,
+					"line": 682,
 					"column": 13,
 					"label": ""
 				},
 				{
-					"line": 575,
-					"column": 13,
+					"line": 746,
+					"column": 29,
 					"label": ""
 				},
 				{
-					"line": 602,
-					"column": 27,
+					"line": 773,
+					"column": 11,
 					"label": ""
 				},
 				{
-					"line": 645,
+					"line": 816,
 					"column": 35,
 					"label": ""
 				},
 				{
-					"line": 662,
-					"column": 31,
+					"line": 833,
+					"column": 12,
 					"label": ""
 				}
 			]

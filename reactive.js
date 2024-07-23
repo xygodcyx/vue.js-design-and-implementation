@@ -82,9 +82,9 @@ const mutableInstrumentations = {
     const had = target.has(key)
     // 设置原始数据为传来的value(可能是响应式数据也可能是原始数据)
     // 如果是响应式数据那它身上就会有RAW_KEY属性,而原始数据没有RAW_KEY属性
-    const rawValue = value[RAW_KEY] || value
     const oldValue = target.get(key)
-    // 我们直接将原始数据复制给key
+    const rawValue = value[RAW_KEY] || value
+    // 我们直接将原始数据赋值给key
     // target.set(key, value)
     target.set(key, rawValue)
     if (!had) {

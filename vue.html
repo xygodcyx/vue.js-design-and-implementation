@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0" />
+    <title>和源码做验证</title>
+    <script src="https://unpkg.com/vue@3"></script>
+  </head>
+  <body>
+    <div id="app">
+      {{ message }}
+      <button @click="reverseMessage">Reverse Message</button>
+    </div>
+    <script>
+      const app = Vue.createApp({
+        setup() {
+          const message = Vue.ref('Hello Vue!')
+          const key = { key: 1 }
+          const map = Vue.reactive(new Map([[key, { value: 2 }]]))
+          const reverseMessage = () => {
+            message.value = message.value.split('').reverse().join('')
+          }
+          Vue.effect(() => {
+            map.forEach((value, key) => {
+              console.log(value, key)
+            })
+          })
+          // 修改map的值，并不会触发副作用函数重新执行
+          map.get(key).value = 3
+          return {
+            message,
+            reverseMessage,
+          }
+        },
+      })
+      app.mount('#app')
+    </script>
+  </body>
+</html>

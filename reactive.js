@@ -2,6 +2,8 @@
 
 // {}型对象的 for...in/of 的依赖收集 唯一键名
 let ITERATE_KEY = Symbol() //Returns a new unique Symbol value.
+// 对map.keys的依赖收集 唯一键名
+let MAP_KEY_ITERATE_KEY = Symbol() //Returns a new unique Symbol value.
 // 可以通过这个key找到响应式数据的原始数据,因为是全局唯一,所以不可能重复
 let RAW_KEY = Symbol() //Returns a new unique Symbol value.
 
@@ -92,9 +94,104 @@ const mutableInstrumentations = {
       trigger(target, key, 'ADD')
     } else if (oldValue !== value || (oldValue !== oldValue && value !== value)) {
       // SET
+      // 会触发绑定了ITERATE_KEY的副作用函数
       trigger(target, key, 'SET')
     }
   },
+  forEach(callback, thisArg) {
+    const target = this[RAW_KEY]
+    // 这个wrap函数可以将传入的原始数据转换为响应式数据,这是为了解决callback函数的参数是原始数据的问题
+    const wrap = (val) => (typeof val === 'object' ? reactive(val) : val)
+    // 依然和ITERATE_KEY进行绑定,因为forEach的遍历时机只和数组的长度有关,所以用ITERATE_KEY
+    track(target, ITERATE_KEY)
+    target.forEach((v, k) => {
+      // 把原始数据v,k转换为响应式数据
+      callback.call(thisArg, wrap(v), wrap(k), this)
+    })
+  },
+  // 因为[Symbol.iterator]和entries是等价的,所以可以复用iteratorMethod
+  [Symbol.iterator]: iteratorMethod,
+  entries: iteratorMethod,
+  values: valuesIteratorMethod,
+  keys: keysIteratorMethod,
+}
+function iteratorMethod() {
+  const target = this[RAW_KEY]
+  const itr = target[Symbol.iterator]()
+  const wrap = (val) => (typeof val === 'object' ? reactive(val) : val)
+  track(target, ITERATE_KEY)
+  // 一个对象是否可迭代,需要满足两个协议:迭代器协议和可迭代协议
+  // 迭代器协议要求对象实现next方法,返回一个对象,{value,done}
+  // 可迭代协议要求对象实现Symbol.iterator方法,返回一个迭代器对象(这个对象必须实现next方法)
+  // 所以如果一个对象实现了next方法,那么这个对象就满足了迭代器协议是一个迭代器对象
+  // 再实现Symbol.iterator方法,那么这个对象就满足了可迭代协议,可以简单的直接返回this,因为this就是一个迭代器对象
+  // 这样把一个普通对象变成了可迭代的对象
+  return {
+    // 实现迭代器协议
+    next() {
+      const { value, done } = itr.next()
+      return {
+        value: value ? [wrap(value[0]), wrap(value[1])] : value,
+        done,
+      }
+    },
+    // 实现可迭代协议
+    [Symbol.iterator]() {
+      return this
+    },
+  }
+}
+function valuesIteratorMethod() {
+  const target = this[RAW_KEY]
+  const itr = target.values()
+  const wrap = (val) => (typeof val === 'object' ? reactive(val) : val)
+  track(target, ITERATE_KEY)
+  // 一个对象是否可迭代,需要满足两个协议:迭代器协议和可迭代协议
+  // 迭代器协议要求对象实现next方法,返回一个对象,{value,done}
+  // 可迭代协议要求对象实现Symbol.iterator方法,返回一个迭代器对象(这个对象必须实现next方法)
+  // 所以如果一个对象实现了next方法,那么这个对象就满足了迭代器协议是一个迭代器对象
+  // 再实现Symbol.iterator方法,那么这个对象就满足了可迭代协议,可以简单的直接返回this,因为this就是一个迭代器对象
+  // 这样把一个普通对象变成了可迭代的对象
+  return {
+    // 实现迭代器协议
+    next() {
+      const { value, done } = itr.next()
+      return {
+        value: wrap(value),
+        done,
+      }
+    },
+    // 实现可迭代协议
+    [Symbol.iterator]() {
+      return this
+    },
+  }
+}
+function keysIteratorMethod() {
+  const target = this[RAW_KEY]
+  const itr = target.keys()
+  const wrap = (val) => (typeof val === 'object' ? reactive(val) : val)
+  track(target, MAP_KEY_ITERATE_KEY)
+  // 一个对象是否可迭代,需要满足两个协议:迭代器协议和可迭代协议
+  // 迭代器协议要求对象实现next方法,返回一个对象,{value,done}
+  // 可迭代协议要求对象实现Symbol.iterator方法,返回一个迭代器对象(这个对象必须实现next方法)
+  // 所以如果一个对象实现了next方法,那么这个对象就满足了迭代器协议是一个迭代器对象
+  // 再实现Symbol.iterator方法,那么这个对象就满足了可迭代协议,可以简单的直接返回this,因为this就是一个迭代器对象
+  // 这样把一个普通对象变成了可迭代的对象
+  return {
+    // 实现迭代器协议
+    next() {
+      const { value, done } = itr.next()
+      return {
+        value: wrap(value),
+        done,
+      }
+    },
+    // 实现可迭代协议
+    [Symbol.iterator]() {
+      return this
+    },
+  }
 }
 
 const bucket = new WeakMap()
@@ -531,16 +628,17 @@ registerEffect(() => {
 // *map的污染问题测试
 // 注意观察,如果我们不加处理,用户就可以书写以下的代码,即:用原始Map操作响应式数据,这是很不对的
 // 因为原始数据和响应式数据应该是分开的,不应该混淆,不然用户既可以使用原始数据又可以使用响应式数据,这会导致代码混乱
-// 理想情况应该是我们操作原始数据时期望应该是不会触发响应式更新，而操作响应式数据时期望会触发响应式更新
+// 理想情况应个不存在的属性时,就会改变size的长度,也就会导致更新啦
+// 解决办法是如果一个map要设置一个响应式数据为它的value,那么就把响应式数据的原始数据设置给它,不用担心这样会导致响应式丢失
+// 因为如果一个map能使用我们该是我们操作原始数据时期望应该是不会触发响应式更新，而操作响应式数据时期望会触发响应式更新
 // 出现这种问题的原因是我们用原始数据进行set操作时(newMap1.set('newMap2', newMap2))会把响应式数据(newMap2)原封不动的设置在
 // 响应式数据newMap1上，而我们的实现是重写了Map的set和get方法，它们的数据流向最终都会是原始数据，所以原始数据map1上也存在newMap2
 // 所以在我们使用map1获取newMap2时，实际上获取到的是响应式数据newMap2，那么自然就会触发相应的更新了（与size关联的副作用函数）
 // 因为在注册副作用函数时，我们通过map1.get("newMap2")拿到了这个响应式数据,然后将它的size和副作用函数绑定在了一起
-// 那么在对map进行set一个不存在的属性时,就会改变size的长度,也就会导致更新啦
-// 解决办法是如果一个map要设置一个响应式数据为它的value,那么就把响应式数据的原始数据设置给它,不用担心这样会导致响应式丢失
-// 因为如果一个map能使用我们重写的方法,那么它一定是响应式数据,而我们做了深相应处理,所以我们可以保证响应式数据不会丢失
-// 而且我们也可以保证如果一个原始对象想将一个响应式数据设置为一个value,我们也可以避免原始数据中某一个key的值是响应式数据
-// 这样就解决了原始数据被污染的问题
+// 那么在对map进行set一重写的方法,那么它一定是响应式数据,而我们做了深响应处理,所以我们可以保证响应式数据不会丢失
+// 而且我们也可以保证如果一个原始对象想将一个响应式数据设置为一个value,我们会将这个响应式数据的原始值设置给它
+// 这样就可以避免原始数据中某一个key的值是响应式数据,这样就解决了原始数据被污染的问题
+
 // 下面是一个与污染问题无关的总结,恰好想到
 // 这里多说一个,如果set了一个已经存在的key,不用担心不会触发更新,因为我们在get的时候已经追踪了这个key,
 // 所以set的时候只要之前用到了这个key(即调用了get方法),那么就会收集与key相关的依赖,然后在set的时候通过
@@ -558,19 +656,19 @@ registerEffect(() => {
 // 经过map的防污染处理,这句代码执行完毕后,副作用函数不会再执行了,因为它是完全的原始数据,和我们所写的响应式系统没有一点关系
 // map1.get('newMap2').set('foo', 1)
 // *测试Set的数据污染,测出问题原因类似,已解决
-const set1 = new Set()
-const newSet1 = reactive(set1)
-const set2 = new Set()
-const newSet2 = reactive(set2)
-newSet1.add(newSet2)
-registerEffect(() => {
-  console.log(set1.values().next().value.size)
-})
-set1.forEach((item) => {
-  if (item === newSet2) {
-    item.add('foo')
-  }
-})
+// const set1 = new Set()
+// const newSet1 = reactive(set1)
+// const set2 = new Set()
+// const newSet2 = reactive(set2)
+// newSet1.add(newSet2)
+// registerEffect(() => {
+//   console.log(set1.values().next().value.size)
+// })
+// set1.forEach((item) => {
+//   if (item === newSet2) {
+//     item.add('foo')
+//   }
+// })
 // *测试数组的数据污染,测出问题原因类似,已解决
 // const arr3 = [1, 2, 3]
 // const newArr3 = reactive(arr3)
@@ -591,6 +689,99 @@ set1.forEach((item) => {
 // console.log(obj1.c.b)
 // })
 // obj1.c.b = 3
+
+// *测试集合类型的foreach方法
+// const key = { key: 1 }
+// const value = new Set([1, 2, 3])
+// const objValue = { a: 1 }
+// const numberValue = 1
+// const map = reactive(new Map([[key, value]]))
+// const map2 = reactive(new Map([[key, objValue]]))
+// const map3 = reactive(new Map([[key, numberValue]]))
+// registerEffect(() => {
+//   //
+//   map.forEach((value, key) => {
+//     console.log(value.size)
+//     console.log('--------------')
+//   })
+// })
+// registerEffect(() => {
+//   map2.forEach((value, key) => {
+//     console.log(value.a)
+//     console.log('--------------')
+//   })
+// })
+// registerEffect(() => {
+//   map3.forEach((value, key) => {
+//     console.log(value)
+//     console.log('--------------')
+//   })
+// })
+// map.get(key).add(4)
+// map2.get(key).a = 2
+// map3.set(key, 2)
+// // set
+// const set = reactive(new Set([1, 2, 3]))
+// registerEffect(() => {
+//   console.log(set.size)
+// })
+
+// *测试集合类型的迭代器方法:values,entries,keys
+// const map = new Map([
+//   ['key1', 1],
+//   ['key2', 2],
+// ])
+
+// for (const [key, value] of map.entries()) {
+//   console.log(key, value) // ['key1', 1], ['key2', 2]
+// }
+// for (const [key, value] of map[Symbol.iterator]()) {
+//   console.log(key, value) // ['key1', 1], ['key2', 2]
+// }
+// const itr = map[Symbol.iterator]()
+// console.log(itr.next().value) // ['key1', 1]
+// console.log(itr.next().value) // ['key2', 2]
+// console.log(itr.next().value) // undefined
+// console.log(map.entries === map[Symbol.iterator]) // true\
+
+const map = reactive(
+  new Map([
+    ['key1', 1],
+    ['key2', 2],
+  ])
+)
+registerEffect(() => {
+  // 如果不加处理,会报错: map is not iterable , 需要在重写for of方法,把原始map的迭代器返回
+  // 别忘了把参数包装成响应式数据(wrap)
+  for (const [key, value] of map) {
+    console.log(key, value)
+  }
+  console.log('[Symbol.iterator] ------')
+})
+registerEffect(() => {
+  // 如果不加处理,会报错: map is not iterable , 需要在重写for of方法,把原始map的迭代器返回
+  // 别忘了把参数包装成响应式数据(wrap)
+  for (const [key, value] of map.entries()) {
+    console.log(key, value)
+  }
+  console.log('entries ------')
+})
+registerEffect(() => {
+  for (const value of map.values()) {
+    console.log(value)
+  }
+  console.log('values ------')
+})
+registerEffect(() => {
+  for (const keys of map.keys()) {
+    console.log(keys)
+  }
+  console.log('keys ------')
+})
+// 可以触发更新,因为我们追踪了ITERATE_KEY和MAP_KEY_ITERATE,当操作类型为ADD或DELETE时,会触发副作用函数的重新执行
+map.set('key3', 3)
+// 不期望keys也能更新,所以需要对keys进行额外处理,需要另外一个全局抽闲的key来标识,MAP_KEY_ITERATE_KEY
+map.set('key2', 4)
 
 function shallowReactive(obj) {
   return createReactive(obj, true)
@@ -621,6 +812,9 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
       }
 
       // *Set和Map的代理
+      // 当访问map和set这个数据本身时,会进入get拦截函数,注意,这个get并不是这些数据自身的get方法,而是你想
+      // 访问map和set时就会触发,比如map.get(),会拦截你访问get这个方法本身,然后将我们重写后的map.get方法返回
+      // 从而实现对map的响应式
       const targetType = target.toString().slice(8, -1) //Object,Map,Set...
       if (targetType === 'Map' || targetType === 'Set') {
         if (key === 'size') {
@@ -736,6 +930,7 @@ function trigger(target, key, type, newValue) {
   let desMap = bucket.get(target)
   let des = desMap && desMap.get(key)
   const runEffectFunctions = new Set()
+  const targetType = target.toString().slice(8, -1) //Object,Map,Set...
 
   des &&
     des.forEach((fun) => {
@@ -743,10 +938,23 @@ function trigger(target, key, type, newValue) {
         runEffectFunctions.add(fun)
       }
     })
-  if (type === 'ADD' || type === 'DELETE') {
+  // type是操作的类型,比如ADD,SET,DELETE,这里的处理方式是
+  // targetType是数据的类型,比如Object,Map,Set...
+  // 就map而言,forEach即关心key也关心value,所以在对Map有set的时候也要触发副作用函数重新执行
+  if (type === 'ADD' || type === 'DELETE' || (type === 'SET' && targetType === 'Map')) {
     // 因为对象被添加或者被删除属性的时候,会影响键的个数,所以需要重新执行与ITERATE_KEY有关的副作用函数
     // map和set也可以用到这个
     const iterateDes = desMap && desMap.get(ITERATE_KEY)
+    iterateDes &&
+      iterateDes.forEach((fun) => {
+        if (activeEffect !== fun) {
+          runEffectFunctions.add(fun)
+        }
+      })
+  }
+  if (type === 'ADD' || (type === 'DELETE' && type === 'SET' && targetType === 'Map')) {
+    // map和keys方法专属
+    const iterateDes = desMap && desMap.get(MAP_KEY_ITERATE_KEY)
     iterateDes &&
       iterateDes.forEach((fun) => {
         if (activeEffect !== fun) {

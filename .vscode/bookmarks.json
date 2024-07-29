@@ -4,73 +4,38 @@
 			"path": "reactive.js",
 			"bookmarks": [
 				{
-					"line": 19,
-					"column": 19,
-					"label": ""
-				},
-				{
-					"line": 42,
-					"column": 34,
-					"label": ""
-				},
-				{
 					"line": 215,
-					"column": 29,
+					"column": 20,
 					"label": ""
 				},
 				{
-					"line": 553,
-					"column": 11,
-					"label": ""
-				},
-				{
-					"line": 597,
+					"line": 844,
 					"column": 10,
 					"label": ""
 				},
 				{
-					"line": 614,
-					"column": 3,
-					"label": ""
-				},
-				{
-					"line": 690,
-					"column": 0,
-					"label": ""
-				},
-				{
-					"line": 728,
-					"column": 36,
-					"label": ""
-				},
-				{
-					"line": 806,
+					"line": 897,
 					"column": 14,
 					"label": ""
 				},
 				{
-					"line": 928,
+					"line": 1019,
+					"column": 12,
+					"label": ""
+				},
+				{
+					"line": 1098,
+					"column": 12,
+					"label": ""
+				},
+				{
+					"line": 1125,
 					"column": 13,
 					"label": ""
 				},
 				{
-					"line": 1006,
-					"column": 29,
-					"label": ""
-				},
-				{
-					"line": 1033,
+					"line": 1191,
 					"column": 11,
-					"label": ""
-				},
-				{
-					"line": 1076,
-					"column": 35,
-					"label": ""
-				},
-				{
-					"line": 1093,
-					"column": 12,
 					"label": ""
 				}
 			]

@@ -26,3 +26,12 @@
 
 ## for of对value进行变量的处理
   同理,我们如果在for of中使用了value,那value就会与副作用函数建立联系,当value发生变化时,副作用函数就会重新执行,这是完全符合预期的
+
+## 为什么会有ref
+  为了让原始值(Boolean,String,Number,Symbol,BigInt,undefined,null,NAN)也具有响应式,怎么做呢?proxy无法代理这些,所以必须对这些值进行封装,包裹一个对象呗,就是这么简单
+  
+  ``` javascript
+  {
+    value:原始值
+  }
+  ```

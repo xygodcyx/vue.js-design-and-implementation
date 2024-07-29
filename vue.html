@@ -17,18 +17,17 @@
       const app = Vue.createApp({
         setup() {
           const message = Vue.ref('Hello Vue!')
-          const key = { key: 1 }
-          const map = Vue.reactive(new Map([[key, { value: 2 }]]))
           const reverseMessage = () => {
             message.value = message.value.split('').reverse().join('')
           }
-          Vue.effect(() => {
-            map.forEach((value, key) => {
-              console.log(value, key)
-            })
-          })
-          // 修改map的值，并不会触发副作用函数重新执行
-          map.get(key).value = 3
+          const obj = Vue.reactive({ a: 1 })
+          Vue.watch(
+            () => obj.a,
+            (newValue, oldValue) => {
+              console.log(newValue, oldValue)
+            }
+          )
+          obj.a = 2
           return {
             message,
             reverseMessage,

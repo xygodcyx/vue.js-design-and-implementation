@@ -18,7 +18,7 @@ const reactiveMap = new Map()
 let shouldTrack = true
 // *数组的方法重写
 const arrayInstrumentations = {}
-;['includes', 'indexOf', 'lastIndexOf', 'find', 'findIndex'].forEach((method) => {
+;['includes', 'indexOf', 'lastIndexOf', 'findIndex', 'find'].forEach((method) => {
   const originalMethod = Array.prototype[method]
   // 其中this是代理数组,因为我们用Reflect.get将this改变为代理对象(receiver,即实际调用对象而不是原始对象)
   arrayInstrumentations[method] = function (...args) {
@@ -246,12 +246,15 @@ function registerEffect(wantRegisterEffectFunction, options = {}) {
   }
   runEffect.deps = []
   runEffect.options = options
+  // lazy会在computed和watch里用到,用与手动执行副作用函数
   if (!options.lazy) {
     runEffect()
   }
   // 至于为什么要把副作用函数返回,是因为我们可能需要手动执行副作用函数(lazy属性)
   // 比如在计算属性和侦听器中,我们就需要手动执行副作用函数
-  return runEffect //registerEffect的返回值是runEffect函数,而runEffect函数的返回值是wantRegisterEffectFunction函数的返回值,所以registerEffect的返回值的返回值(注意是两层返回值)就是wantRegisterEffectFunction函数的返回值,可以用于computed和watch使用
+  return runEffect
+  // registerEffect的返回值是runEffect函数,而runEffect函数的返回值是wantRegisterEffectFunction函数的返回值,所以registerEffect的返回值的返回值(注意是两层返回值)就是wantRegisterEffectFunction函数的返回值,可以用于computed和watch使用
+  // 简单来说,registerEffect函数的返回值(effect)就是你传来的函数wantRegisterEffectFunction,你执行effect得到的就是wantRegisterEffectFunction的返回值
 }
 function cleanup(runEffect) {
   runEffect.deps.forEach((dep) => {
@@ -529,9 +532,9 @@ registerEffect(() => {
 // arr1[1] = 99
 // arr1[99] = 3
 // arr1.length = 1
-const obj = { a: 1 }
-const arr2 = reactive([1, 2, 3, obj])
-const a = [1]
+// const obj = { a: 1 }
+// const arr2 = reactive([1, 2, 3, obj])
+// const a = [1]
 registerEffect(() => {
   // includes方法可以被正常执行,这是因为includes方法会读取数组的length和被查找索引之前的索引属性
   // 所以会和数组的length属性和被查找属性和其之前的属性建立联系,因为在其之后的属性没有被读取也就没有建立联系了
@@ -744,44 +747,79 @@ registerEffect(() => {
 // console.log(itr.next().value) // undefined
 // console.log(map.entries === map[Symbol.iterator]) // true\
 
-const map = reactive(
-  new Map([
-    ['key1', 1],
-    ['key2', 2],
-  ])
-)
-registerEffect(() => {
-  // 如果不加处理,会报错: map is not iterable , 需要在重写for of方法,把原始map的迭代器返回
-  // 别忘了把参数包装成响应式数据(wrap)
-  for (const [key, value] of map) {
-    console.log(key, value)
-  }
-  console.log('[Symbol.iterator] ------')
-})
-registerEffect(() => {
-  // 如果不加处理,会报错: map is not iterable , 需要在重写for of方法,把原始map的迭代器返回
-  // 别忘了把参数包装成响应式数据(wrap)
-  for (const [key, value] of map.entries()) {
-    console.log(key, value)
-  }
-  console.log('entries ------')
-})
-registerEffect(() => {
-  for (const value of map.values()) {
-    console.log(value)
-  }
-  console.log('values ------')
-})
-registerEffect(() => {
-  for (const keys of map.keys()) {
-    console.log(keys)
-  }
-  console.log('keys ------')
-})
-// 可以触发更新,因为我们追踪了ITERATE_KEY和MAP_KEY_ITERATE,当操作类型为ADD或DELETE时,会触发副作用函数的重新执行
-map.set('key3', 3)
-// 不期望keys也能更新,所以需要对keys进行额外处理,需要另外一个全局抽闲的key来标识,MAP_KEY_ITERATE_KEY
-map.set('key2', 4)
+// const map = reactive(
+//   new Map([
+//     ['key1', 1],
+//     ['key2', 2],
+//   ])
+// )
+// registerEffect(() => {
+//   // 如果不加处理,会报错: map is not iterable , 需要在重写for of方法,把原始map的迭代器返回
+//   // 别忘了把参数包装成响应式数据(wrap)
+//   for (const [key, value] of map) {
+//     console.log(key, value)
+//   }
+//   console.log('[Symbol.iterator] ------')
+// })
+// registerEffect(() => {
+//   // 如果不加处理,会报错: map is not iterable , 需要在重写for of方法,把原始map的迭代器返回
+//   // 别忘了把参数包装成响应式数据(wrap)
+//   for (const [key, value] of map.entries()) {
+//     console.log(key, value)
+//   }
+//   console.log('entries ------')
+// })
+// registerEffect(() => {
+//   for (const value of map.values()) {
+//     console.log(value)
+//   }
+//   console.log('values ------')
+// })
+// registerEffect(() => {
+//   for (const keys of map.keys()) {
+//     console.log(keys)
+//   }
+//   console.log('keys ------')
+// })
+// // 可以触发更新,因为我们追踪了ITERATE_KEY和MAP_KEY_ITERATE,当操作类型为ADD或DELETE时,会触发副作用函数的重新执行
+// map.set('key3', 3)
+// // 不期望keys也能更新,所以需要对keys进行额外处理,需要另外一个全局抽闲的key来标识,MAP_KEY_ITERATE_KEY
+// map.set('key2', 4)
+
+// *测试ref
+// const val = ref(1)
+// console.log(val)
+// registerEffect(() => {
+//   console.log(val['__v_isRef'])
+// })
+// // 可以正常执行,但只是简单的包裹一下还不完美:无法区分ref和reactive,所以需要一个标识符来表示一个响应式数据是不是ref(__v_isRef)
+// // const newVal = reactive(val)
+// val.value = 2
+// 响应式丢失问题
+// const obj2 = reactive({ a: 1, b: 2 })
+// const newObj2 = {
+//   ...toRefs(obj2),
+// }
+// registerEffect(() => {
+//   console.log(newObj2.a.value)
+// })
+// obj2.a = 2
+// 自动脱ref
+// const obj2 = reactive({ a: 1, b: 2 })
+// const newObj2 = proxyRefs({ ...toRefs(obj2) })
+// registerEffect(() => {
+//   console.log(newObj2.a)
+// })
+// newObj2.a = 2
+// const count = ref(0)
+// const obj2 = reactive({ count: proxyRefs(count) })
+// registerEffect(() => {
+//   // console.log(obj2.count)
+//   console.log(count.value)
+// })
+// count.value++
+// obj2.count = 1
+// obj2.count = 2
 
 function shallowReactive(obj) {
   return createReactive(obj, true)
@@ -802,6 +840,59 @@ function readonly(obj) {
 
 function shallowReadonly(obj) {
   return createReactive(obj, true, true)
+}
+
+function ref(val) {
+  const wrapper = {
+    value: val,
+  }
+  Object.defineProperty(wrapper, '__v_isRef', { value: true })
+  return reactive(wrapper)
+}
+
+// 这个函数是快速从一个响应式对象上提取某个属性作为响应式对象使用
+function toRef(obj, key) {
+  const wrapper = {
+    get value() {
+      return obj[key]
+    },
+    set value(newVal) {
+      obj[key] = newVal
+    },
+  }
+  Object.defineProperty(wrapper, '__v_isRef', { value: true })
+  return wrapper
+}
+// 同上,只是把一个响应式对象全部提取为响应式对象(相当于浅拷贝一份)
+// 所以通过toRef得到的响应式数据,修改自身或者原来的响应式数据都能触发更新
+function toRefs(obj) {
+  const res = {}
+  for (const key in obj) {
+    res[key] = toRef(obj, key)
+  }
+  return res
+}
+
+// 自动脱ref,主要是为了在模版里不用写count.value这样的繁琐代码
+function proxyRefs(obj) {
+  return new Proxy(obj, {
+    get(target, key, receiver) {
+      const value = Reflect.get(target, key, receiver)
+      return isRef(value) ? value.value : value
+    },
+    set(target, key, newValue, receiver) {
+      const value = target[key]
+      if (isRef(value)) {
+        value.value = newValue
+        return true
+      }
+      return Reflect.set(target, key, newValue, receiver)
+    },
+  })
+}
+
+function isRef(val) {
+  return val['__v_isRef'] === true
 }
 
 function createReactive(obj, isShallow = false, isReadonly = false) {
@@ -902,7 +993,7 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
       // 额外的唯一标识来收集这些依赖(用Symbol作为标识,谁还敢说Symbol没用?!)
       // 如果是target是数组的话,直接用length作为键就行了,因为对数组的增删其实就是对length的增删
       track(target, Array.isArray(target) ? 'length' : ITERATE_KEY)
-      // 相应的,触发的时候也要从ITERATE_KEY里读取依赖
+      // 相应的,触发的时候也要从ITERATE_KEY或length里的副作用函数集合中拿到副作用函数
       return Reflect.ownKeys(target)
     },
     deleteProperty(target, key) {
@@ -927,9 +1018,9 @@ function createReactive(obj, isShallow = false, isReadonly = false) {
  * @returns {void}
  */
 function trigger(target, key, type, newValue) {
-  let desMap = bucket.get(target)
-  let des = desMap && desMap.get(key)
-  const runEffectFunctions = new Set()
+  let desMap = bucket.get(target) // 永远是当前操作的对象的依赖Map,与其他对象无关
+  let des = desMap && desMap.get(key) // 永远是当前操作对象的当前操作的key的依赖集合,与其他key无关
+  const runEffectFunctions = new Set() // 真正会执行的副作用函数集合
   const targetType = target.toString().slice(8, -1) //Object,Map,Set...
 
   des &&
@@ -938,7 +1029,7 @@ function trigger(target, key, type, newValue) {
         runEffectFunctions.add(fun)
       }
     })
-  // type是操作的类型,比如ADD,SET,DELETE,这里的处理方式是
+  // type是操作的类型,比如ADD,SET,DELETE
   // targetType是数据的类型,比如Object,Map,Set...
   // 就map而言,forEach即关心key也关心value,所以在对Map有set的时候也要触发副作用函数重新执行
   if (type === 'ADD' || type === 'DELETE' || (type === 'SET' && targetType === 'Map')) {
@@ -962,8 +1053,9 @@ function trigger(target, key, type, newValue) {
         }
       })
   }
-  // 处理数组的情况 , arr = ["bar"] 但是复制的时候 arr[1] = "foo" 于是就是数组长度改变了(规范),需要触发length的副作用函数重新执行
+  // 处理数组, eg :arr = ["bar"]; 当执行 arr[1] = "foo" 时数组会发生长度改变(规范),需要触发关于length的副作用函数执行
   if (type === 'ADD' && Array.isArray(target)) {
+    //对数组进行for in操作时我们会对length进行追踪,因为拦截了ownKeys方法,所以在改变数组长度时也会重新执行副作用函数
     const lengthEffects = desMap && desMap.get('length')
     lengthEffects &&
       lengthEffects.forEach((fun) => {
@@ -1034,6 +1126,7 @@ function track(target, key) {
 function computed(getter) {
   let value
   let dirty = true
+  // 这个effect就是用户传入的getter函数
   const effect = registerEffect(getter, {
     // 调度器的执行在属性被set时执行(trigger)
     // this scheduler function will call be getter internal reactive data changed
@@ -1045,7 +1138,6 @@ function computed(getter) {
       if (!dirty) {
         dirty = true
         // we HM call trigger call computed'effect when getter includes reactive value changed
-
         // 在值脏了以后手动触发副作用函数
         trigger(obj, 'value')
       }
@@ -1076,6 +1168,7 @@ function computed(getter) {
  */
 function traverse(value, seen = new Set()) {
   if (typeof value !== 'object' || value === null || seen.has(value)) {
+    console.log('value', value)
     return
   }
   seen.add(value)
@@ -1084,6 +1177,11 @@ function traverse(value, seen = new Set()) {
   }
   return value
 }
+const obj3 = reactive({ a: 1 })
+watch(obj3, (newValue, oldValue, onInvalidate) => {
+  console.log(newValue, oldValue)
+})
+obj3.a = 2
 /**
  * watch function can watch obj or value change an call you self function
  * @param {Function | Object} source - you can input getter or specific obj value we will
@@ -1096,13 +1194,20 @@ function watch(source, cb, options = {}) {
   if (typeof source === 'function') {
     getter = source
   } else {
-    getter = () => traverse(source)
+    console.log('traverse', traverse(source))
+    getter = () =>
+      traverse(
+        source
+      ) /* traverse函数并不是为了干什么事情,而是为了读取,就是单纯的读取操作,因为要收集依赖*/
   }
   let newValue, oldValue
 
   let cleanFun
 
+  // 注册一个清除函数,传入的参数是一个函数,这个函数里做一些清除工作
+  // 因为是闭包,所以会记住作用域,在下次执行副作用函数时,会调用这个函数,用来执行一些清理工作
   function onInvalidate(fun) {
+    // 闭包,会记住传入的fun的作用域
     cleanFun = fun
   }
 
@@ -1110,6 +1215,7 @@ function watch(source, cb, options = {}) {
     // that step is get latest value
     newValue = effectFun()
     // that branch will execute when register onInvalidate function , cleanFun variable will change to be you register function , if that exist then will call before with watch callback
+    // 其实是调用了上次传入的清除函数,执行清理工作,然后再执行当前的副作用函数
     if (cleanFun) {
       cleanFun()
     }
@@ -1118,22 +1224,26 @@ function watch(source, cb, options = {}) {
     oldValue = newValue
   }
 
+  // 这是watch的核心,这个effectFun的返回值就是传入的getter的返回值,也就是我们传入的要观察的值
   /**
    *registerEffect function return value is runEffect:24 function , that function return value is effect function return value,
    *in this case watch function first argument is obj or getter , any way , we all transform getter that return value is that includes reactive data
    *so,registerEffect function return value is we want that return value,because runEffect will return we input effect function return value
    **/
-  const effectFun = registerEffect(() => getter() /* 这个getter很有意思,需要经常揣摩 */, {
-    lazy: true, // 设置懒执行是因为我们需要手动管理副作用函数的执行时机,比如立即执行啊,和获取新久值啊
-    scheduler() {
-      if (options.flush === 'post') {
-        const p = Promise.resolve()
-        p.then(doJob)
-      } else {
-        doJob()
-      }
-    },
-  })
+  const effectFun = registerEffect(
+    () => getter() /* 这个getter很有意思,需要经常揣摩,目的其实就是进行依赖收集(读取值)*/,
+    {
+      lazy: true, // 设置懒执行是因为我们需要手动管理副作用函数的执行时机,比如立即执行啊,和获取新久值啊
+      scheduler() {
+        if (options.flush === 'post') {
+          const p = Promise.resolve()
+          p.then(doJob)
+        } else {
+          doJob()
+        }
+      },
+    }
+  )
   if (options.immediate) {
     doJob()
   } else {

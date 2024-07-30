@@ -12,6 +12,7 @@
     <div id="app">
       {{ message }}
       <button @click="reverseMessage">Reverse Message</button>
+      <div :class="{foo:true}"></div>
     </div>
     <script>
       const app = Vue.createApp({

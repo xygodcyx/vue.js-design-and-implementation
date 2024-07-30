@@ -1168,7 +1168,6 @@ function computed(getter) {
  */
 function traverse(value, seen = new Set()) {
   if (typeof value !== 'object' || value === null || seen.has(value)) {
-    console.log('value', value)
     return
   }
   seen.add(value)
@@ -1177,11 +1176,6 @@ function traverse(value, seen = new Set()) {
   }
   return value
 }
-const obj3 = reactive({ a: 1 })
-watch(obj3, (newValue, oldValue, onInvalidate) => {
-  console.log(newValue, oldValue)
-})
-obj3.a = 2
 /**
  * watch function can watch obj or value change an call you self function
  * @param {Function | Object} source - you can input getter or specific obj value we will
@@ -1194,7 +1188,6 @@ function watch(source, cb, options = {}) {
   if (typeof source === 'function') {
     getter = source
   } else {
-    console.log('traverse', traverse(source))
     getter = () =>
       traverse(
         source

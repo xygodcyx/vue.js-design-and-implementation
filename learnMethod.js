@@ -1,28 +1,28 @@
 // 'use strict'
 
 const obj = {
-	a: 1,
+  a: 1,
 }
 
 Object.defineProperty(obj, 'b', {
-	value: 3,
-	enumerable: true,
-	writable: false,
+  value: 3,
+  enumerable: true,
+  writable: false,
 })
 
 Object.defineProperty(obj, 'c', {
-	value: 4,
-	enumerable: true,
-	writable: true,
-	configurable: false,
+  value: 4,
+  enumerable: true,
+  writable: true,
+  configurable: false,
 })
 console.log(
-	Object.setPrototypeOf(obj, {
-		a: 1,
-		b: 3,
-		c: 2,
-		d: 4,
-	})
+  Object.setPrototypeOf(obj, {
+    a: 1,
+    b: 3,
+    c: 2,
+    d: 4,
+  })
 )
 console.log(Object.getPrototypeOf(obj))
 console.log(Object.keys(obj))

@@ -19,17 +19,42 @@
     </div>
   </body>
 
-  <script src="reactive.js"></script>
-  <script src="renderer.js"></script>
+  <!-- <script src="./reactivity/reactive.js"></script> -->
+  <script src="rendererDev.js"></script>
   <script>
-    // const { effect, ref } = VueReactivity
-    // console.log(effect, ref)
+    const { effect, reactive, ref } = VueReactivity
+    const name = ref('小明')
     const info = reactive({ text: '你好' })
-    // registerEffect(() => {
-    //   if (document.querySelector('.title')) document.querySelector('.title').textContent = info.text
-    // })
-    // setTimeout(() => {
-    //   info.text += ',世界'
-    // }, 1000)
+    const bol = ref(false)
+    // 响应式系统和渲染系统的结合
+    effect(() => {
+      const vnode = {
+        type: 'div',
+        props: bol.value
+          ? {
+              id: 'wrap',
+              onClick: () => {
+                console.log('父元素点击事件')
+              },
+            }
+          : {},
+        children: [
+          {
+            type: 'p',
+            props: {
+              onClick: () => {
+                bol.value = true
+              },
+            },
+            children: '你好',
+          },
+        ],
+      }
+
+      render(vnode, document.getElementById('app'))
+    })
+    setTimeout(() => {
+      name.value = '小红'
+    }, 1000)
   </script>
 </html>

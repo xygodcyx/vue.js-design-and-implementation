@@ -11,16 +11,30 @@
   <body>
     <div id="app">
       {{ message }}
-      <button @click="reverseMessage">Reverse Message</button>
+      <button
+        @click="reverseMessage"
+        ref="btnDom"
+        :style="{
+        color: '#987212',
+        fontSize: '20px',
+        backgroundColor: '#123456',
+        borderRadius: '5px',
+      }">
+        Reverse Message
+      </button>
       <div :class="{foo:true}"></div>
     </div>
     <script>
       const app = Vue.createApp({
         setup() {
           const message = Vue.ref('Hello Vue!')
+          const btnDom = Vue.ref(null)
           const reverseMessage = () => {
             message.value = message.value.split('').reverse().join('')
           }
+          Vue.onMounted(() => {
+            btnDom.value.addEventListener('click', () => {})
+          })
           const obj = Vue.reactive({ a: 1 })
           Vue.watch(
             () => obj.a,
@@ -31,6 +45,7 @@
           obj.a = 2
           return {
             message,
+            btnDom,
             reverseMessage,
           }
         },

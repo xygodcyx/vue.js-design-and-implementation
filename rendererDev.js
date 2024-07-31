@@ -86,13 +86,42 @@ const { render } = createRenderer({
       if (key === 'form' && el.tagName === 'INPUT') return false
       return key in el
     }
-    if (/^on/.test(key) && typeof nextValue === 'function') {
-      const type = key.slice(2).toLowerCase()
-      prevValue && el.removeEventListener(type, prevValue)
-      el.addEventListener(type, nextValue)
+    if (/^on/.test(key)) {
+      // 事件绑定
+      const eName = key.slice(2).toLowerCase()
+      //因为el.vel可能不存在,所以不能写成这样：el.vel[eName]
+      // invokers是一个元素绑定的所有事件
+      const invokers = el.vel || (el.vel = {})
+      let invoker = invokers[eName]
+      if (nextValue) {
+        // 需要绑定事件
+        if (!invoker) {
+          // 第一次绑定事件
+          invoker = invokers[eName] = function (e) {
+            // 传递的事件可以是数组，需要遍历执行
+            if (Array.isArray(invoker.value)) {
+              invoker.value.forEach((fn) => fn(e))
+            } else {
+              invoker.value(e)
+            }
+          }
+          invoker.value = nextValue
+          el.addEventListener(eName, invoker)
+        } else {
+          // 已经绑定过事件，需要更新invoker的value
+          invoker.value = nextValue
+        }
+      } else {
+        // 解绑事件
+        el.removeEventListener(eName, invoker)
+      }
     } else if (key === 'class') {
+      // 类名绑定
       el.className = normalizeClass(nextValue)
+    } else if (key === 'style') {
+      el.style = normalizeStyle(nextValue)
     } else if (shouldSetAsProps(el, key, nextValue)) {
+      // 属性设置
       // 如果key是DOM Properties属性
       const type = typeof el[key]
 
@@ -107,44 +136,7 @@ const { render } = createRenderer({
     }
   },
 })
-const vnode1 = {
-  type: 'button',
-  props: {
-    id: 'foo',
-    disabled: 1,
-    class: [
-      'foo',
-      {
-        bar: true,
-        baz: true,
-      },
-    ],
-  },
-  children: [
-    {
-      type: 'p',
-      children: 'hello',
-    },
-  ],
-}
-const vnode2 = {
-  type: 'span',
-  props: {
-    id: 'span',
-    class: [
-      'name',
-      {
-        active: true,
-      },
-    ],
-    onClick: () => {
-      console.log('click')
-    },
-  },
-  children: 'span',
-}
-render(vnode1, document.getElementById('app'))
-render(vnode2, document.querySelector('#app'))
+
 // render(null, document.getElementById('app'))
 
 // tools
@@ -184,4 +176,40 @@ function normalizeClass(value) {
     res += handleObjClassName(value)
   }
   return res.trim()
+}
+
+function normalizeStyle(value) {
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('style must be an object')
+  }
+  let res = ''
+  function camelToKebab(str) {
+    return str.replace(/([a-z0-9]|(?=[A-Z]))([A-Z])/g, '$1-$2').toLowerCase()
+  }
+  function camelStyleToKebab(value) {
+    const res = {}
+    // 检查是否有浏览器支持的样式属性
+    const dom = document.createElement('div')
+    for (const key in value) {
+      if (key in dom.style) {
+        res[camelToKebab(key)] = value[key]
+      } else {
+        console.warn(`Invalid style property: ${key}`)
+      }
+    }
+    return res
+  }
+
+  let styleObj = {}
+  styleObj = camelStyleToKebab(value)
+  function transformStyleToString(res) {
+    let styleStr = ''
+    for (const key in res) {
+      styleStr += `${key}:${res[key]};`
+    }
+    return styleStr
+  }
+  res = transformStyleToString(styleObj)
+
+  return res
 }

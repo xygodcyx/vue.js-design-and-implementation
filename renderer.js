@@ -58,6 +58,7 @@ function createRenderer(options) {
 
     if (vnode.props) {
       for (const key in vnode.props) {
+        // 挂载时
         patchProps(el, key, null, vnode.props[key])
       }
     }
@@ -85,10 +86,11 @@ const { render } = createRenderer({
       if (key === 'form' && el.tagName === 'INPUT') return false
       return key in el
     }
-    // 这种写法不完美
-    // el.setAttribute(key, vnode.props[key])
-    // el[key] = vnode.props[key]
-    if (key === 'class') {
+    if (/^on/.test(key) && typeof nextValue === 'function') {
+      const type = key.slice(2).toLowerCase()
+      prevValue && el.removeEventListener(type, prevValue)
+      el.addEventListener(type, nextValue)
+    } else if (key === 'class') {
       el.className = normalizeClass(nextValue)
     } else if (shouldSetAsProps(el, key, nextValue)) {
       // 如果key是DOM Properties属性
@@ -135,6 +137,9 @@ const vnode2 = {
         active: true,
       },
     ],
+    onClick: () => {
+      console.log('click')
+    },
   },
   children: 'span',
 }

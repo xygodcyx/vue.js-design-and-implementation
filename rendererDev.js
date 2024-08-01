@@ -43,7 +43,6 @@ function createRenderer(options) {
     }
   }
   function patchElement(n1, n2) {
-    console.log(n1, n2)
     const el = (n2.el = n1.el)
     const oldProps = n1.props
     const newProps = n2.props
@@ -56,6 +55,7 @@ function createRenderer(options) {
     }
     for (const key in oldProps) {
       if (!(key in newProps)) {
+        // 新节点删除了属性
         patchProps(el, key, oldProps[key], null)
       }
     }
@@ -74,6 +74,32 @@ function createRenderer(options) {
           unmount(child)
         })
       }
+      setElementText(container, c2)
+    } else if (Array.isArray(c2)) {
+      // 新节点是数组时
+      if (Array.isArray(c1)) {
+        // 旧节点也是数组时 diff算法
+        // diff()
+        // 先简单的实现需求
+        c1.forEach((child) => unmount(child))
+        c2.forEach((child) => patch(null, child, container))
+      } else {
+        // 旧节点是null或文本节点,直接清空容器,然后挂载新节点
+        setElementText(container, '')
+        c2.forEach((child) => {
+          patch(null, child, container)
+        })
+      }
+    } else {
+      // 新节点是null
+      if (typeof c1 === 'string') {
+        setElementText(container, '')
+      } else if (Array.isArray(c1)) {
+        c1.forEach((child) => {
+          unmount(child)
+        })
+      }
+      // 旧节点也是null,那就不用做任何事情
     }
   }
 
@@ -186,6 +212,9 @@ const { render } = createRenderer({
 
 // tools
 function normalizeClass(value) {
+  if (!value) {
+    return ''
+  }
   let res = ''
   function handleStringClassName(value) {
     return value.trim()

@@ -1,24 +1,19 @@
 function createRenderer(options) {
-  function unmount(vnode) {
-    const parent = vnode.el.parentNode
-    if (parent) {
-      parent.removeChild(vnode.el)
-    }
-  }
   function render(vnode, container) {
-    // 如果存在vnode, 则进行patch操作(挂载或打补丁)
     if (vnode) {
+      // 挂载或更新
       patch(container._vnode, vnode, container)
     } else {
-      // 如果vnode不存在并且container._vnode存在，说明不需要新节点了但存在旧节点，那么此时就是unmount操作
+      // 卸载
       if (container._vnode) {
         // 拿到真实的dom节点
         unmount(container._vnode)
       }
     }
+    // 标记container的vnode,此后可以根据container._vnode判断是否存在虚拟节点然后以此判断是需要更新还是卸载
     container._vnode = vnode
   }
-  const { createElement, setElementText, insert, patchProps } = options
+  const { createElement, setElementText, insert, unmount, patchProps } = options
 
   // n1旧 n2新
   function patch(n1, n2, container) {
@@ -27,10 +22,14 @@ function createRenderer(options) {
       unmount(n1)
       n1 = null
     }
-    // 运行到这里,说明vnode1和vnode2的类型相同
+    // 运行到这里,有两种情况:
+    // 1. n1和n2都存在且类型相同,需要更新
+    // 2. n1不存在,n2存在,需要卸载n1
     const { type } = n2
     if (typeof type === 'string') {
+      // 普通html元素
       if (!n1) {
+        // 旧的节点不存在，需要挂载新节点
         mountElement(n2, container)
       } else {
         // 打补丁
@@ -43,17 +42,58 @@ function createRenderer(options) {
       // 其他
     }
   }
-  function patchElement(n1, n2) {}
+  function patchElement(n1, n2) {
+    console.log(n1, n2)
+    const el = (n2.el = n1.el)
+    const oldProps = n1.props
+    const newProps = n2.props
+
+    // 更新属性
+    for (const key in newProps) {
+      if (oldProps[key] !== newProps[key]) {
+        patchProps(el, key, oldProps[key], newProps[key])
+      }
+    }
+    for (const key in oldProps) {
+      if (!(key in newProps)) {
+        patchProps(el, key, oldProps[key], null)
+      }
+    }
+    // 更新子节点
+    patchChildren(n1, n2, el)
+  }
+  function patchChildren(n1, n2, container) {
+    const c1 = n1.children
+    const c2 = n2.children
+    if (typeof c2 === 'string') {
+      // 新节点是文本节点时
+      if (Array.isArray(c1)) {
+        // 如果旧节点是书序,那么需要卸载
+
+        c1.forEach((child) => {
+          unmount(child)
+        })
+      }
+    }
+  }
 
   function mountElement(vnode, container) {
+    // 将vnode的真实节点保存到el中,为了后续的更新和卸载
     const el = (vnode.el = createElement(vnode.type))
 
     if (typeof vnode.children === 'string') {
+      // 文本节点
       setElementText(el, vnode.children)
     } else if (Array.isArray(vnode.children)) {
+      // 不是文本节点
       vnode.children.forEach((child) => {
         patch(null, child, el)
       })
+    } else if (typeof vnode.children === 'undefined' || vnode.children === null) {
+      // 空节点
+      setElementText(el, '')
+    } else {
+      throw new Error('children must be a string or an array or null')
     }
 
     if (vnode.props) {
@@ -79,7 +119,12 @@ const { render } = createRenderer({
   insert(parent, el, anchor = null) {
     parent.appendChild(el)
   },
-
+  unmount(vnode) {
+    const parent = vnode.el.parentNode
+    if (parent) {
+      parent.removeChild(vnode.el)
+    }
+  },
   patchProps(el, key, prevValue, nextValue) {
     // 有些属性在某些元素上是只读的
     function shouldSetAsProps(el, key, value) {
@@ -180,7 +225,7 @@ function normalizeClass(value) {
 
 function normalizeStyle(value) {
   if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('style must be an object')
+    return '' // 非对象或数组类型直接返回空字符串
   }
   let res = ''
   function camelToKebab(str) {

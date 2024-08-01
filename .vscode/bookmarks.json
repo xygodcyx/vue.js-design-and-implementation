@@ -39,6 +39,21 @@
 					"label": ""
 				}
 			]
+		},
+		{
+			"path": "rendererDev.js",
+			"bookmarks": [
+				{
+					"line": 111,
+					"column": 28,
+					"label": ""
+				},
+				{
+					"line": 127,
+					"column": 30,
+					"label": ""
+				}
+			]
 		}
 	]
 }

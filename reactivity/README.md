@@ -1,12 +1,3 @@
----
-markdown:
-  image_dir: /assets
-  path: output.md
-  ignore_from_front_matter: true
-  absolute_image_path: false
-export_on_save:
-  markdown: true
----
 
 # 响应式
 
@@ -130,8 +121,7 @@ export_on_save:
       ```
 
       在`registerEffect`内部，我们会将传入的副作用函数再包装一层,称为`runEffect`，然后我们将`activeEffect`赋值为`runEffect`，然后再执行传入的副作用函数，而在副作用函数里，我们会读取响应式数据，前文提到，我们拦截了响应式数据的`get`，然后在`get`处理器函数里运行了`track`函数，在`track`里我们会将当前的副作用函数添加到当前读取的`key`(比如`obj.a`)的依赖集合中，将来修改`obj.a`的值时，就会从bucket中找到这个响应式数据(`obj`)中的(`obj.a`)所对应的依赖集合，然后触发集合里的副作用函数，这样就大功告成了。
-
-      当然,这只是大体的实现思路,具体实现还需要考虑许多边缘情况,比如
+      **当然,这只是大体的实现思路,具体实现还需要考虑许多边缘情况,比如：**
 
       + 如何判断一个值是不是真的被修改了,只有被修改了才需要触发依赖,而不是简单的只要调用了`set`方法就触发依赖。
 
@@ -158,6 +148,35 @@ export_on_save:
 
         >解决办法是: 在`get`处理器中我们返回`Reflect.get(target,key,receiver)`,其中receiver是响应式对象本身,这样`Reflect.get`会正确的将`this`指向为响应式对象本身,从而收集依赖
 
-      + 如何处理因为父子对象的属性继承导致副作用函数执行两次的问题,例如`子对象`没有`a属性`,但是`父对象`有`a属性`,那么当执行`子对象.a`时实际上会调用两次`get`方法,一次是调用`子对象`的`[[Get]]`发现没有`a属性`,于是就会读取`父对象`的`[[Get]]`,这就导致我们明明读取的是`子对象`,修改的也是`子对象`,但是会对父对象也进行依赖收集并且修改时也会触发父对象关联的副作用函数,导致副作用函数执行了两次
-        >解决办法：在每个响应式属性上设置一个`Raw`属性,这个属性的值是响应式属性的原始值,在track之前判断`receiver[Raw]`是否是当前操作的原始属性,因为我们操作的是`子对象`,即使进入到`父对象`拦截的`get`处理器时`receiver`也是`子对象`,因为receiver始终指向当前操作的对象,所以我们可以根据这点来判断当前将要收集依赖的对象是不是我们当前操作的.
-        >即使用:`receiver[Raw] === receiver`来判断拦截的对象是否是当前操作的对象.
+      + 如何处理因为父子对象的属性继承导致副作用函数执行两次的问题,例如`子对象`没有`a属性`,但是`父对象`有`a属性`,那么当执行`子对象.a`时实际上会调用两次`get`方法,一次是调用`子对象`的`[[Get]]`发现没有`a属性`,于是就会读取`父对象`的`[[Get]]`；在修改时同理，在子对象的`[[Set]]`中会先判断`子对象`有没有`a属性`，没有的话则会调用`父对象`的`[[Set]]`方法。这就导致我们明明读取的是`子对象`,修改的也是`子对象`,但是会对父对象也进行依赖收集并且修改时也会触发父对象关联的副作用函数,导致副作用函数执行了两次。
+
+        ``` javascript
+        const child = reactive({ a: 1 })
+        const parent = reactive({ b:2 })
+        Object.setPrototypeOf(child,parent)
+        registerEffect(()=>{
+          console.log(child.b) // 打印2
+        })
+        child.b = 3 // 打印两次3
+        ```
+
+        >解决办法：在每个响应式属性上设置一个`Raw`属性,这个属性的值是响应式属性的原始值,在trigger之前判断`receiver[Raw]`是否是当前操作的原始属性,因为我们操作的是`子对象`,即使进入到`父对象`拦截的`get`处理器时`receiver`也是`子对象`,因为receiver始终指向当前操作的对象,所以我们可以根据这点来判断当前将要收集依赖的对象是不是我们当前操作的.
+        即使用:`receiver[Raw] === receiver`来判断拦截的对象是否是当前操作的对象.
+
+        核心代码:
+
+        ``` javascript
+        const RAW_KEY = Symbol()
+        new Proxy(obj,{
+          get(target,key,receiver){
+            console.log(receiver) // 都是child
+            if(key === RAW_KEY){
+              return target
+            }
+            // 这个判断可以排除父子对象属性继承导致的副作用函数执行两次的问题
+            if(receiver[RAW_KEY] === target){
+              track(target,key)
+            }
+          }
+        })
+        ```

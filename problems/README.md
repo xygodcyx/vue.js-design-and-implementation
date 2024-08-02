@@ -14,7 +14,7 @@
 
   ---
 
-### 其中set和map的解决方案
+### 其中集合数据的解决方案
 
   ``` javascript
   // set的add方法
@@ -25,11 +25,19 @@
   // 我们直接将原始数据赋值给key
   // target.set(key, value)
   target.set(key, rawValue)
+  ```
+
+### 普通对象的解决方案（包括数组）
+  
+  ``` javascript
   // 普通对象和数组
   const rawValue = newValue[RAW_KEY] || newValue
   const res = Reflect.set(target, key, rawValue, receiver)
+
   ```
 
   ---
-  **它们的处理方式其实都是一样的,只是在赋值时将响应式数据转换为原始数据,这样就不会影响到原始数据的正常使用也不会和响应式数据混淆混淆**
+
+ > 它们的处理方式其实都是一样的,就是在赋值时将响应式数据转换为原始数据,这样既不会影响响应式数据的正常使用也不会导致原始数据和响应式数据混淆。
+ 因为在读取时会自动转换为响应式数据,只要整个对象是响应式的,那属性也就一定是响应式的(除非是shallowXXX)
   

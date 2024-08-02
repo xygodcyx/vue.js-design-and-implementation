@@ -5,7 +5,7 @@
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0" />
-    <title>事件绑定eventListener</title>
+    <title>文本节点、注释节点、Fragment节点</title>
   </head>
 
   <body>
@@ -15,43 +15,57 @@
   </body>
 
   <!-- <script src="https://unpkg.com/@vue/reactivity@3.0.5/dist/reactivity.global.js"></script> -->
-  <script src="./reactivity/reactive.js"></script>
+  <script src="../reactivity/reactive.js"></script>
   <script src="../dev/rendererDev.js"></script>
   <script>
     const { effect, reactive, ref } = typeof VueReactivity === 'undefined' ? minVue : VueReactivity
-    const name = ref('小明')
-    const info = reactive({ text: '你好' })
-    const bol = ref(false)
-    // 响应式系统和渲染系统的结合
+    const text = ref('小明') //ref在定义完毕时就已经时响应式,收集依赖发生在读取.value时
+    const comment = ref('注释')
+    /** const commentNode = {
+     *   type: Comment,
+     *   children: comment.value // 这一步就进行了get,就会收集依赖,,但是没有在effect里面,所以无法收集依赖,所以commentNode的创建要在effect里面,
+     * }
+     * const textNode = {
+     *   type: Text,
+     *   children: text.value, // 这一步就进行了get操作,就会收集依赖,但是没有在effect里面,所以无法收集依赖,所以textNode的创建要在effect里面,
+     * }
+     */
     effect(() => {
-      const vnode = {
-        type: 'div',
-        props: bol.value
-          ? {
-              id: 'wrap',
-              onClick: () => {
-                console.log('父元素点击事件')
-              },
-            }
-          : {},
-        children: [
-          {
-            type: 'p',
-            props: {
-              onClick: () => {
-                console.log('子元素点击事件')
-                bol.value = true
-              },
-            },
-            children: '你好',
-          },
-        ],
+      const commentNode = {
+        type: Comment,
+        children:
+          comment.value /* 这一步就进行了get,就会收集依赖,所以commentNode的创建要在effect里面 */,
       }
+      const textNode = {
+        type: Text,
+        children: text.value /* 这一步就进行了get,就会收集依赖,所以textNode的创建要在effect里面 */,
+      }
+      const fragmentNode = {
+        type: Fragment,
+        children: [textNode, commentNode],
+      }
+      /**
+       * 如果把textNode和commentNode的创建移到effect外面,
+       * 那在effect中
+       * textNode读取children时其实是原始值"小明",
+       * commentNode读取children时也是原始值"注释",
+       * 这是因为在创建时就已经完成了读取操作,并将text.value和comment.value的值读取进children中,
+       * 并且完成了依赖收集,所以在node.children里的数据其实是:
+       * { type: Text, children: "小明" }
+       * { type: Comment, children: "注释" }
+       * 所以我们要在effect里读取响应式数据，而不是直接将获取到的响应式数据给到某一个值以期望可以与副作用函数建立联系，这样是不行的
+       */
 
-      render(vnode, document.getElementById('app'))
+      const node1 = {
+        type: 'div',
+        children: [textNode, commentNode],
+      }
+      // render(node1, document.querySelector('#app'))
+      render(fragmentNode, document.querySelector('#app'))
     })
     setTimeout(() => {
-      name.value = '小红'
+      text.value = '小红'
+      comment.value = '注释2'
     }, 1000)
   </script>
 </html>

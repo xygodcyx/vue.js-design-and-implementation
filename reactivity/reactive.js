@@ -1,6 +1,5 @@
 const minVue = (function (exports) {
   'use strict'
-
   // {}型对象的 for...in/of 的依赖收集 唯一键名
   let ITERATE_KEY = Symbol() //Returns a new unique Symbol value.
   // 对map.keys的依赖收集 唯一键名
@@ -346,7 +345,6 @@ const minVue = (function (exports) {
   function isRef(val) {
     return val['__v_isRef'] === true
   }
-
   function createReactive(obj, isShallow = false, isReadonly = false) {
     return new Proxy(obj, {
       get(target, key, receiver) {

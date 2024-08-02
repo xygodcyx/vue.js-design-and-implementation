@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0" />
+    <title>事件绑定eventListener</title>
+  </head>
+
+  <body>
+    <div id="app">
+      <h1 class="title"></h1>
+    </div>
+  </body>
+
+  <!-- <script src="https://unpkg.com/@vue/reactivity@3.0.5/dist/reactivity.global.js"></script> -->
+  <script src="../reactivity/reactive.js"></script>
+  <script src="../dev/rendererDev.js"></script>
+  <script>
+    const { effect, reactive, ref } = typeof VueReactivity === 'undefined' ? minVue : VueReactivity
+    const name = ref('小明')
+    const info = reactive({ text: '你好' })
+    const bol = ref(false)
+    // 响应式系统和渲染系统的结合
+    effect(() => {
+      const vnode = {
+        type: 'div',
+        props: bol.value
+          ? {
+              id: 'wrap',
+              onClick: () => {
+                console.log('父元素点击事件')
+              },
+            }
+          : {},
+        children: [
+          {
+            type: 'p',
+            props: {
+              onClick: () => {
+                console.log('子元素点击事件')
+                bol.value = true
+              },
+            },
+            children: '你好',
+          },
+        ],
+      }
+
+      render(vnode, document.getElementById('app'))
+    })
+    setTimeout(() => {
+      name.value = '小红'
+    }, 1000)
+  </script>
+</html>

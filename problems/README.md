@@ -1,7 +1,9 @@
 # 一些因框架导致的问题以及处理
 
-[返回](../README.md)
-[下一页]("")
+<p style="display: flex; justify-content: start; gap: 10px;">
+  <a href="../README.md">首页</a>
+  <a href="../renderer/README.md">上一页</a>
+</p>
 
 ## 数据污染
 

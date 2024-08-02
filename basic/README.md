@@ -1,7 +1,10 @@
-# Vue.js Basic Logic
+# Vue.js 核心逻辑
 
-[返回](../README.md)
-[下一页]("")
+<p style="display: flex; justify-content: start; gap: 10px;">
+  <a href="../README.md">首页</a>
+  <a href="../analysis/README.md">上一页</a>
+  <a href="../reactivity/README.md">下一页</a>
+</p>
 
 ## 什么是响应式
 

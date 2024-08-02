@@ -12,8 +12,8 @@ export_on_save:
 
 <p style="display: flex; justify-content: start; gap: 10px;">
   <a href="../README.md">首页</a>
-  <a href="../reactivity/README.md">上一页</a>
-  <a href="../README.md">下一页</a>
+  <a href="../basic/README.md">上一页</a>
+  <a href="../renderer/README.md">下一页</a>
 </p>
 
 + 一句话概括：数据变化时，重新执行某个依赖这个数据的函数`fn`。s

@@ -1,7 +1,7 @@
 {
 	"files": [
 		{
-			"path": "reactiveDev.js",
+			"path": "dev/reactiveDev.js",
 			"bookmarks": [
 				{
 					"line": 215,
@@ -41,15 +41,40 @@
 			]
 		},
 		{
-			"path": "rendererDev.js",
+			"path": "dev/rendererDev.js",
 			"bookmarks": [
 				{
-					"line": 138,
+					"line": 32,
+					"column": 16,
+					"label": ""
+				},
+				{
+					"line": 92,
+					"column": 20,
+					"label": ""
+				},
+				{
+					"line": 120,
+					"column": 21,
+					"label": ""
+				},
+				{
+					"line": 157,
+					"column": 20,
+					"label": ""
+				},
+				{
+					"line": 188,
 					"column": 28,
 					"label": ""
 				},
 				{
-					"line": 153,
+					"line": 203,
+					"column": 6,
+					"label": ""
+				},
+				{
+					"line": 220,
 					"column": 20,
 					"label": ""
 				}

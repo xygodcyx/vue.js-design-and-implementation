@@ -1,21 +1,35 @@
+const Text = Symbol() // 描述文本节点
+const Comment = Symbol() // 描述注释节点
+const Fragment = Symbol() // 描述片段节点
 function createRenderer(options) {
   function render(vnode, container) {
     if (vnode) {
       // 挂载或更新
-      patch(container._vnode, vnode, container)
+      patch(container._vnode /* 旧vnode */, vnode /* 新vnode */, container /* 父容器 */)
     } else {
       // 卸载
       if (container._vnode) {
-        // 拿到真实的dom节点
         unmount(container._vnode)
       }
     }
     // 标记container的vnode,此后可以根据container._vnode判断是否存在虚拟节点然后以此判断是需要更新还是卸载
     container._vnode = vnode
   }
-  const { createElement, setElementText, insert, unmount, patchProps } = options
+  const {
+    createElement,
+    setElementText,
+    insert,
+    unmount,
+    patchProps,
+    createText,
+    createComment,
+    setText,
+  } = options
 
   // n1旧 n2新
+  /**
+   * patch第一个参数为null时,意为挂载节点,否则进行更新
+   */
   function patch(n1, n2, container) {
     if (n1 && n2 && n1.type !== n2.type) {
       // 类型不同，需要卸载旧节点，然后挂载新节点
@@ -33,8 +47,42 @@ function createRenderer(options) {
         mountElement(n2, container)
       } else {
         // 打补丁
-        console.log('patch')
         patchElement(n1, n2)
+      }
+    } else if (type === Text) {
+      // 文本节点
+      if (!n1) {
+        // 如果n1不存在,则需要创建文本节点
+        const el = (n2.el = createText(n2.children))
+        insert(container, el)
+      } else {
+        // 如果n1存在,并且n1和n2的children不同,则需要更新文本节点
+        const el = (n2.el = n1.el)
+        if (n1.children !== n2.children) {
+          setText(el, n2.children)
+        }
+      }
+    } else if (type === Comment) {
+      // 注释节点
+      if (!n1) {
+        // 如果n1不存在,则需要创建注释节点
+        const el = (n2.el = createComment(n2.children))
+        insert(container, el)
+      } else {
+        // 如果n1存在,并且n1和n2的children不同,则需要更新注释节点
+        const el = (n2.el = n1.el)
+        if (n1.children !== n2.children) {
+          setText(el, n2.children)
+        }
+      }
+    } else if (type === Fragment) {
+      // fragment节点
+      if (!n1) {
+        // 如果n1不存在,逐个挂载子节点即可,因为是fragment节点,不需要挂载父节点
+        n2.children.forEach((c) => patch(null, c, container))
+      } else {
+        // 如果n1存在,并且n1和n2的children不同,那就更新fragment节点
+        patchChildren(n1, n2, container)
       }
     } else if (typeof type === 'object') {
       // 组件
@@ -62,44 +110,48 @@ function createRenderer(options) {
     // 更新子节点
     patchChildren(n1, n2, el)
   }
+  /**
+  更新子节点时,理论上有九种情况的自由组合
+  即:
+  新节点为文本节点,旧节点为三种节点之一
+  新节点为数组,旧节点为三种节点之一
+  新节点为null,旧节点为三种节点之一
+  但实际上不需要这么多情况
+  */
   function patchChildren(n1, n2, container) {
     const c1 = n1.children
     const c2 = n2.children
     if (typeof c2 === 'string') {
-      // 新节点是文本节点时
+      // 新节点是文本节点
       if (Array.isArray(c1)) {
-        // 如果旧节点是书序,那么需要卸载
-
-        c1.forEach((child) => {
-          unmount(child)
-        })
+        // 旧节点是数组,需要先卸载旧节点
+        c2.forEach((c) => unmount(c))
       }
+      // 然后设置文本节点
       setElementText(container, c2)
     } else if (Array.isArray(c2)) {
-      // 新节点是数组时
+      // 新节点是数组
       if (Array.isArray(c1)) {
-        // 旧节点也是数组时 diff算法
-        // diff()
-        // 先简单的实现需求
-        c1.forEach((child) => unmount(child))
-        c2.forEach((child) => patch(null, child, container))
+        // 旧节点也是数组，这里涉及diff算法
+        // 现在先简单的实现功能
+        // 卸载之前的，然后挂在新的
+        c1.forEach((c) => unmount(c))
+        c2.forEach((c) => patch(null, c, container))
       } else {
-        // 旧节点是null或文本节点,直接清空容器,然后挂载新节点
+        // 旧节点是文本或null
+        // 无论是那种情况,都需要先清空旧节点,然后挂载新节点
         setElementText(container, '')
-        c2.forEach((child) => {
-          patch(null, child, container)
-        })
+        c2.forEach((c) => patch(null, c, container))
       }
     } else {
-      // 新节点是null
-      if (typeof c1 === 'string') {
+      // 新节点是null,即容器只是一个空标签,里面没有内容,但是存在元素 eg: <div></div>
+      if (Array.isArray(c1)) {
+        // 旧节点是数组
+        // 需要先卸载旧节点
+        c1.forEach((c) => unmount(c))
+      } else {
         setElementText(container, '')
-      } else if (Array.isArray(c1)) {
-        c1.forEach((child) => {
-          unmount(child)
-        })
       }
-      // 旧节点也是null,那就不用做任何事情
     }
   }
 
@@ -108,14 +160,12 @@ function createRenderer(options) {
     const el = (vnode.el = createElement(vnode.type))
 
     if (typeof vnode.children === 'string') {
-      // 文本节点
+      // 子节点是文本
       setElementText(el, vnode.children)
     } else if (Array.isArray(vnode.children)) {
-      // 不是文本节点
-      vnode.children.forEach((child) => {
-        patch(null, child, el)
-      })
-    } else if (typeof vnode.children === 'undefined' || vnode.children === null) {
+      // 子节点是数组
+      vnode.children.forEach((child) => patch(null, child, el))
+    } else if (vnode.children === null) {
       // 空节点
       setElementText(el, '')
     } else {
@@ -142,13 +192,30 @@ const { render } = createRenderer({
   setElementText: (el, text) => {
     el.textContent = text
   },
+  createText: (text) => {
+    return document.createTextNode(text)
+  },
+  createComment: (comment) => {
+    return document.createComment(comment)
+  },
+  setText: (el, text) => {
+    el.nodeValue = text
+  },
   insert(parent, el, anchor = null) {
     parent.appendChild(el)
   },
   unmount(vnode) {
-    const parent = vnode.el.parentNode
-    if (parent) {
-      parent.removeChild(vnode.el)
+    _unmount(vnode)
+    function _unmount(vnode) {
+      if (vnode.type === Fragment) {
+        // fragment需要逐个卸载子节点
+        vnode.children.forEach((c) => _unmount(c))
+        return
+      }
+      const parent = vnode.el.parentNode
+      if (parent) {
+        parent.removeChild(vnode.el)
+      }
     }
   },
   patchProps(el, key, prevValue, nextValue) {
@@ -169,6 +236,9 @@ const { render } = createRenderer({
         if (!invoker) {
           // 第一次绑定事件
           invoker = invokers[eName] = function (e) {
+            if (e.timeStamp < invoker.attached) {
+              return // 防止事件冒泡导致父元素事件错误触发
+            }
             // 传递的事件可以是数组，需要遍历执行
             if (Array.isArray(invoker.value)) {
               invoker.value.forEach((fn) => fn(e))
@@ -176,6 +246,7 @@ const { render } = createRenderer({
               invoker.value(e)
             }
           }
+          invoker.attached = performance.now() // 记录绑定时间
           invoker.value = nextValue
           el.addEventListener(eName, invoker)
         } else {

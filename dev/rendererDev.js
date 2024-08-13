@@ -56,7 +56,7 @@ function createRenderer(options) {
         const el = (n2.el = createText(n2.children))
         insert(container, el)
       } else {
-        // 如果n1存在,并且n1和n2的children不同,则需要更新文本节点
+        // 如果n1存在,并且n1和n2的children /* 实际内容 */ 不同,则需要更新文本节点
         const el = (n2.el = n1.el)
         if (n1.children !== n2.children) {
           setText(el, n2.children)
@@ -65,7 +65,6 @@ function createRenderer(options) {
     } else if (type === Comment) {
       // 注释节点
       if (!n1) {
-        // 如果n1不存在,则需要创建注释节点
         const el = (n2.el = createComment(n2.children))
         insert(container, el)
       } else {
@@ -81,7 +80,7 @@ function createRenderer(options) {
         // 如果n1不存在,逐个挂载子节点即可,因为是fragment节点,不需要挂载父节点
         n2.children.forEach((c) => patch(null, c, container))
       } else {
-        // 如果n1存在,并且n1和n2的children不同,那就更新fragment节点
+        // 如果n1存在,那么只需要更新fragment节点的children即可(因为fragment节点没有真实节点)
         patchChildren(n1, n2, container)
       }
     } else if (typeof type === 'object') {
@@ -119,36 +118,61 @@ function createRenderer(options) {
   但实际上不需要这么多情况
   */
   function patchChildren(n1, n2, container) {
-    const c1 = n1.children
-    const c2 = n2.children
-    if (typeof c2 === 'string') {
+    const oldChildren = n1.children
+    const newChildren = n2.children
+    if (typeof newChildren === 'string') {
       // 新节点是文本节点
-      if (Array.isArray(c1)) {
+      if (Array.isArray(oldChildren)) {
         // 旧节点是数组,需要先卸载旧节点
-        c2.forEach((c) => unmount(c))
+        newChildren.forEach((c) => unmount(c))
       }
       // 然后设置文本节点
-      setElementText(container, c2)
-    } else if (Array.isArray(c2)) {
+      setElementText(container, newChildren)
+    } else if (Array.isArray(newChildren)) {
       // 新节点是数组
-      if (Array.isArray(c1)) {
+      if (Array.isArray(oldChildren)) {
         // 旧节点也是数组，这里涉及diff算法
         // 现在先简单的实现功能
-        // 卸载之前的，然后挂在新的
-        c1.forEach((c) => unmount(c))
-        c2.forEach((c) => patch(null, c, container))
+        // 卸载之前的，然后挂载新的
+        // 执行的一定是patch操作,因为需要更新子节点的props和事件等等
+        // const oldLength = oldChildren.length
+        // const newLength = newChildren.length
+        // const commonLength = Math.min(oldLength, newLength)
+        // for (let i = 0; i < commonLength; i++) {
+        //   // 先把新旧都有的节点进行更新操作
+        //   patch(oldChildren[i], newChildren[i], container)
+        // }
+        // // 再判断是否需要创建或删除节点
+        // if (oldLength > commonLength) {
+        //   for (let i = commonLength; i < oldChildren; i++) {
+        //     unmount(oldChildren[i])
+        //   }
+        // } else if (newLength > commonLength) {
+        //   for (let i = commonLength; i < newChildren; i++) {
+        //     patch(null, newChildren[i], container)
+        //   }
+        // }
+        for (let i = 0; i < newChildren.length; i++) {
+          const newVNode = newChildren[i]
+          for (let j = 0; j < oldChildren.length; j++) {
+            const oldVNode = oldChildren[j]
+            if (oldVNode.key === newVNode.key) {
+              patch(oldVNode, newVNode, container)
+            }
+          }
+        }
       } else {
         // 旧节点是文本或null
         // 无论是那种情况,都需要先清空旧节点,然后挂载新节点
         setElementText(container, '')
-        c2.forEach((c) => patch(null, c, container))
+        newChildren.forEach((c) => patch(null, c, container))
       }
     } else {
       // 新节点是null,即容器只是一个空标签,里面没有内容,但是存在元素 eg: <div></div>
-      if (Array.isArray(c1)) {
+      if (Array.isArray(oldChildren)) {
         // 旧节点是数组
         // 需要先卸载旧节点
-        c1.forEach((c) => unmount(c))
+        oldChildren.forEach((c) => unmount(c))
       } else {
         setElementText(container, '')
       }

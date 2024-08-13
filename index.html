@@ -31,7 +31,7 @@
      *   children: text.value, // 这一步就进行了get操作,就会收集依赖,但是没有在effect里面,所以无法收集依赖,所以textNode的创建要在effect里面,
      * }
      */
-    effect(() => {
+    effect(async () => {
       const commentNode = {
         type: Comment,
         children:
@@ -59,10 +59,30 @@
 
       const node1 = {
         type: 'div',
-        children: [textNode, commentNode],
+        children: [
+          { type: 'p', children: text.value + '666', key: 1 },
+          { type: 'p', children: text.value, key: 1 },
+          { type: 'p', children: text.value, key: 1 },
+        ],
+      }
+      const node2 = {
+        type: 'div',
+        children: [
+          { type: 'p', children: text.value + '1', key: 1 },
+          { type: 'p', children: text.value + '2', key: 1 },
+          { type: 'p', children: text.value + '3', key: 1 },
+        ],
+      }
+      const node3 = {
+        type: 'div',
+        children: [fragmentNode],
       }
       // render(node1, document.querySelector('#app'))
-      render(fragmentNode, document.querySelector('#app'))
+      // render(node1, document.querySelector('#app')) // 2s后会先更新,然后更新
+      // await new Promise((re) => {
+      //   setTimeout(re, 1000)
+      // })
+      render(node2, document.querySelector('#app')) // 1s后立即触发更新,把node1覆盖,然后2s后重复这个操作
     })
     setTimeout(() => {
       text.value = '小红'

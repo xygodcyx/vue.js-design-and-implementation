@@ -14,5 +14,19 @@
       height="306"
       src="https://jex.im/regulex/#!embed=true&flags=&re=(%5Ba-z0-9%5D%7C(%3F%3D%5BA-Z%5D))(%5BA-Z%5D)"></iframe>
     <script src="test.js"></script>
+    <script>
+      function log(...args) {
+        const newLog = new Proxy(console.log, {
+          apply: (target, thisArg, args) => {
+            const originalArgs = args.slice()
+            const customData = ['%c1232', 'color: blue; font-weight: bold;']
+            const newArgs = customData.concat(originalArgs)
+            Reflect.apply(target, thisArg, newArgs)
+          },
+        })
+        newLog(...args)
+      }
+      log('This is a test')
+    </script>
   </body>
 </html>

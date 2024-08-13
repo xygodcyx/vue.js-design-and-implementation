@@ -1081,6 +1081,7 @@ function trigger(target, key, type, newValue) {
       })
   }
 
+  // 真正执行副作用函数,前面那些都是在添加
   runEffectFunctions.forEach((effectFun) => {
     if (effectFun.options.scheduler) {
       effectFun.options.scheduler(effectFun)
@@ -1144,12 +1145,14 @@ function computed(getter) {
     },
     // 为什么是懒执行呢?因为我们需要对副作用函数的执行时机进行控制,
     // 比如只有当用户读取value属性并且值发生改变时才执行副作用函数,
+    // lazy为true时不会立即执行副作用函数(在注册时),也就不会立即建立依赖,需要我们手动执行registerEffect的返回值(effext)时才会建立依赖(触发读取)
     lazy: true,
   })
 
   const obj = {
     get value() {
       if (dirty) {
+        // 在每次值被改变时读取value都会重新执行effect函数从而重新收集依赖并更新value的值(最新)
         value = effect() //这个函数的返回值就是传入的getter函数的返回值,所以computed函数的返回值就是getter函数的返回值,但中间我们做了computed的一些处理(依赖收集)
         dirty = false
         // we HM call track collect computed'effect when computed'value get
@@ -1164,7 +1167,7 @@ function computed(getter) {
 
 // watch
 /**
- * 这个函数的作用是遍历一个对象所有属性,包括子属性,如果值是对象,则递归调用遍历函数
+ * 这个函数的作用是遍历一个对象所有属性,包括子属性,如果值是对象,则递归调用遍历函数,目的就是单纯的读取,不做任何事情
  */
 function traverse(value, seen = new Set()) {
   if (typeof value !== 'object' || value === null || seen.has(value)) {
@@ -1232,13 +1235,13 @@ function watch(source, cb, options = {}) {
           const p = Promise.resolve()
           p.then(doJob)
         } else {
-          doJob()
+          doJob() //在值被修改时执行回调函数
         }
       },
     }
   )
   if (options.immediate) {
-    doJob()
+    doJob() // 此时oldValue的值是undefined,因为还没有被修改过,所以oldValue是undefined
   } else {
     oldValue = effectFun()
   }

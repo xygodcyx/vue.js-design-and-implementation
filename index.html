@@ -62,20 +62,7 @@
         type: 'div',
         children: [
           { type: 'p', children: '1', key: 1 },
-          {
-            type: 'p',
-            children: [
-              {
-                type: 'span',
-                children: [
-                  { type: Text, children: '文本' },
-                  { type: 'a', children: '123', key: 123 },
-                ],
-                key: 5,
-              },
-            ],
-            key: 2,
-          },
+          { type: 'p', children: '2', key: 2 },
           { type: 'p', children: '3', key: 3 },
           { type: 'p', children: 'xygod', key: 4 },
         ],
@@ -83,23 +70,10 @@
       const newNode = {
         type: 'div',
         children: [
-          { type: 'p', children: 'xygodcyx', key: 3 },
-          {
-            type: 'p',
-            children: [
-              {
-                type: 'span',
-                children: [
-                  { type: 'a', children: '1233121', key: 123 },
-                  { type: Text, children: '文本1221' },
-                ],
-                key: 5,
-              },
-            ],
-            key: 2,
-          },
+          { type: 'p', children: 'xygodcyx', key: 4 },
           { type: 'p', children: '1', key: 1 },
-          { type: 'p', children: '3', key: 4 },
+          { type: 'p', children: '2', key: 2 },
+          { type: 'p', children: '3', key: 3 },
         ],
       }
       // render(node1, document.querySelector('#app'))

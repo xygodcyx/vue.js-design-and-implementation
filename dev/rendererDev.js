@@ -2,19 +2,6 @@ const Text = Symbol() // 描述文本节点
 const Comment = Symbol() // 描述注释节点
 const Fragment = Symbol() // 描述片段节点
 function createRenderer(options) {
-  function render(vnode, container) {
-    if (vnode) {
-      // 挂载或更新
-      patch(container._vnode /* 旧vnode */, vnode /* 新vnode */, container /* 父容器 */)
-    } else {
-      // 卸载
-      if (container._vnode) {
-        unmount(container._vnode)
-      }
-    }
-    // 标记container的vnode,此后可以根据container._vnode判断是否存在虚拟节点然后以此判断是需要更新还是卸载
-    container._vnode = vnode
-  }
   const {
     createElement,
     setElementText,
@@ -26,16 +13,32 @@ function createRenderer(options) {
     setText,
   } = options
 
+  function render(vnode, container) {
+    if (vnode) {
+      // 挂载或更新
+      patch(container._vnode /* 旧vnode */, vnode /* 新vnode */, container /* 父容器 */)
+    } else {
+      // 卸载
+      if (container._vnode) {
+        unmount(container._vnode)
+      } else {
+        console.warn('旧节点不存在,无法卸载')
+      }
+    }
+    // 标记container的vnode,此后可以根据container._vnode判断是否存在虚拟节点然后以此判断是需要更新还是卸载
+    container._vnode = vnode
+  }
   // n1旧 n2新
   /**
    * patch第一个参数为null时,意为挂载节点,否则进行更新
    */
-  function patch(n1, n2, container) {
+  function patch(n1, n2, container, anchor = null) {
     if (n1 && n2 && n1.type !== n2.type) {
       // 类型不同，需要卸载旧节点，然后挂载新节点
       unmount(n1)
       n1 = null
     }
+    // n1和n2的容器是一样的,因为如果不一样在一开始就会执行挂载操作(container._vnode不存在)
     // 运行到这里,有两种情况:
     // 1. n1和n2都存在且类型相同,需要更新
     // 2. n1不存在,n2存在,需要卸载n1
@@ -44,9 +47,10 @@ function createRenderer(options) {
       // 普通html元素
       if (!n1) {
         // 旧的节点不存在，需要挂载新节点
-        mountElement(n2, container)
+        mountElement(n2, container, anchor)
       } else {
-        // 打补丁
+        // 打补丁(更新)
+        /* 因为是html节点,所以有属性,所以需要更新props,而别的节点不需要更新props(除了组件) */
         patchElement(n1, n2)
       }
     } else if (type === Text) {
@@ -81,6 +85,7 @@ function createRenderer(options) {
         n2.children.forEach((c) => patch(null, c, container))
       } else {
         // 如果n1存在,那么只需要更新fragment节点的children即可(因为fragment节点没有真实节点)
+        /* 走patchChildren不会错,因为patchelement里最终会执行patch */
         patchChildren(n1, n2, container)
       }
     } else if (typeof type === 'object') {
@@ -90,11 +95,10 @@ function createRenderer(options) {
     }
   }
   function patchElement(n1, n2) {
-    const el = (n2.el = n1.el)
+    const el = (n2.el = n1.el) /* 拿到自身的dom节点,因为自己的子节点的容器是这个 */
+    // 更新属性
     const oldProps = n1.props
     const newProps = n2.props
-
-    // 更新属性
     for (const key in newProps) {
       if (oldProps[key] !== newProps[key]) {
         patchProps(el, key, oldProps[key], newProps[key])
@@ -107,7 +111,7 @@ function createRenderer(options) {
       }
     }
     // 更新子节点
-    patchChildren(n1, n2, el)
+    patchChildren(n1, n2, el /* 把自己的真实dom作为子节点的容器 */)
   }
   /**
   更新子节点时,理论上有九种情况的自由组合
@@ -117,77 +121,140 @@ function createRenderer(options) {
   新节点为null,旧节点为三种节点之一
   但实际上不需要这么多情况
   */
+  /* 更新子节点 */
   function patchChildren(n1, n2, container) {
-    const oldChildren = n1.children
-    const newChildren = n2.children
-    if (typeof newChildren === 'string') {
+    if (typeof n2.children === 'string') {
       // 新节点是文本节点
-      if (Array.isArray(oldChildren)) {
+      if (Array.isArray(n1.children)) {
         // 旧节点是数组,需要先卸载旧节点
-        newChildren.forEach((c) => unmount(c))
+        n1.children.forEach((c) => unmount(c))
       }
-      // 然后设置文本节点
-      setElementText(container, newChildren)
-    } else if (Array.isArray(newChildren)) {
+      // 然后设置文本节点,无论是旧节点是字符串还是null,都需要设置为文本节点
+      if (n1.children !== n2.children) {
+        setElementText(container, n2.children)
+      }
+    } else if (Array.isArray(n2.children)) {
       // 新节点是数组
-      if (Array.isArray(oldChildren)) {
+      if (Array.isArray(n1.children)) {
         // 旧节点也是数组，这里涉及diff算法
-        // 现在先简单的实现功能
-        // 卸载之前的，然后挂载新的
-        // 执行的一定是patch操作,因为需要更新子节点的props和事件等等
-        // const oldLength = oldChildren.length
-        // const newLength = newChildren.length
-        // const commonLength = Math.min(oldLength, newLength)
-        // for (let i = 0; i < commonLength; i++) {
-        //   // 先把新旧都有的节点进行更新操作
-        //   patch(oldChildren[i], newChildren[i], container)
-        // }
-        // // 再判断是否需要创建或删除节点
-        // if (oldLength > commonLength) {
-        //   for (let i = commonLength; i < oldChildren; i++) {
-        //     unmount(oldChildren[i])
-        //   }
-        // } else if (newLength > commonLength) {
-        //   for (let i = commonLength; i < newChildren; i++) {
-        //     patch(null, newChildren[i], container)
-        //   }
-        // }
-        for (let i = 0; i < newChildren.length; i++) {
-          const newVNode = newChildren[i]
-          for (let j = 0; j < oldChildren.length; j++) {
-            const oldVNode = oldChildren[j]
-            if (oldVNode.key === newVNode.key) {
-              patch(oldVNode, newVNode, container)
-            }
-          }
-        }
+        const oldChildren = n1.children
+        const newChildren = n2.children
+        simpleDiff(oldChildren, newChildren, container)
+        // doubleEndDiff(oldChildren, newChildren, container)
       } else {
         // 旧节点是文本或null
         // 无论是那种情况,都需要先清空旧节点,然后挂载新节点
         setElementText(container, '')
-        newChildren.forEach((c) => patch(null, c, container))
+        n2.children.forEach((c) => patch(null, c, container))
       }
     } else {
       // 新节点是null,即容器只是一个空标签,里面没有内容,但是存在元素 eg: <div></div>
-      if (Array.isArray(oldChildren)) {
+      if (Array.isArray(n1.children)) {
         // 旧节点是数组
         // 需要先卸载旧节点
-        oldChildren.forEach((c) => unmount(c))
-      } else {
-        setElementText(container, '')
+        n1.children.forEach((c) => unmount(c))
+      }
+      // 旧节点是文本或null
+      // 无论是那种情况,都只需要清空容器的文本内容即可
+      setElementText(container, '')
+    }
+  }
+  function simpleDiff(oldChildren, newChildren, container) {
+    let lastIndex = 0
+    // 更新、移动和添加
+    for (let i = 0; i < newChildren.length; i++) {
+      const newVNode = newChildren[i]
+      // 不需要每次都从0开始遍历,只需要从上次找到的位置开始就行
+      let j = 0
+      let find = false
+      for (j; j < oldChildren.length; j++) {
+        const oldVNode = oldChildren[j]
+        if (oldVNode.key === newVNode.key) {
+          /* 因为不知道子节点里有什么,所以一定要调用patch */
+          patch(oldVNode, newVNode, container) /* patch完了(属性改变了)就需要改变位置了*/
+          find = true
+          if (j < lastIndex) {
+            // 如果当前找到的节点在旧children中的索引小于最大索引lastIndex
+            // 说明该节点对应的真实dom需要移动
+            // 第一个想到这个算法的人简直是天才,天才...
+            // *画图画图,遇到靠想象理解不了的情况就画图,不要硬想,画图更直观
+            const el = (oldChildren[j].el = newChildren[i].el)
+            /* 不能直接移动,因为如果旧子节点的顺序不是递增的,就会导致顺序混乱 */
+            const prevNode = newChildren[i - 1]
+
+            if (prevNode) {
+              const anchor = prevNode.el.nextSibling /* 拿到前一个节点的下一个节点的真实dom */
+              // 获取anchor的思想也极其巧妙,如果没有anchor,那么就说明不需要
+              // 移动的元素在旧节点树的最后,那就直接插入到最后即可
+              // 因为更新的目的就是把当前找到的节点的真实dom插入到新节点的真实dom后面(按新节点的顺序)
+              insert(container, el, anchor)
+            } else {
+              // 如果prevNode不存在,那么说明是第一个节点,那么不需要移动,因为它的第一个,其他的旧节点应该移动到它的后面
+            }
+            // insert(container, el)
+          } else {
+            lastIndex = j
+          }
+          break
+        }
+      }
+      if (!find) {
+        // 遍历完了,没找到相同的key,则需要创建(挂载)新节点
+        let anchor = null
+        const prevNode = newChildren[i - 1]
+        if (prevNode) {
+          // 有前一个节点,那就把需要挂载的新节点添加到前一个节点的后面(通过
+          // 前一个节点的的真实dom的后一个节点来确定插入位置)
+          anchor = prevNode.el.nextSibling /* 拿到前一个节点的下一个节点的真实dom */
+        } else {
+          // 如果没有前一个节点,说明要添加的新节点是第一个节点,那么就用容器的第一个节点来确定插入位置
+          anchor = container.firstChild
+        }
+        patch(null, newVNode, container, anchor)
+      }
+    }
+    // 删除,等更新完毕了再遍历一次旧节点,如果在新节点中找不到与之对应的key,那么就要卸载
+    for (let i = 0; i < oldChildren.length; i++) {
+      const has = newChildren.find((c) => c.key === oldChildren[i].key)
+      if (!has) {
+        unmount(oldChildren[i])
       }
     }
   }
+  function doubleEndDiff(oldChildren, newChildren, container) {
+    // 四个索引值
+    let oldStartIndex = 0
+    let oldEndIndex = oldChildren.length - 1
+    let newStartIndex = 0
+    let newEndIndex = newChildren.length - 1
+    // 四个索引指向的vnode节点
+    let oldStartVNode = oldChildren[oldStartIndex]
+    let oldEndVNode = oldChildren[oldEndIndex]
+    let newStartVNode = newChildren[newStartIndex]
+    let newEndVNode = newChildren[newEndIndex]
+    if (newStartVNode.key === oldStartVNode.key) {
+      // 第一步,比较旧的第一个节点和新的第一个节点
+    } else if (newEndVNode.key === oldEndVNode.key) {
+      // 第二步,比较旧的最后一个节点和新的最后一个节点
+    } else if (newEndVNode.key === oldStartVNode.key) {
+      // 第三步,比较旧的第一个节点和新的最后一个节点
+    } else if (newStartVNode.key === oldEndVNode.key) {
+      // 第四步,比较旧的最后一个节点和新的第一个节点
+      patch(oldStartVNode, newEndVNode, container) /* 先打完补丁 */
+    }
+  }
 
-  function mountElement(vnode, container) {
+  function mountElement(vnode, container, anchor = null) {
     // 将vnode的真实节点保存到el中,为了后续的更新和卸载
-    const el = (vnode.el = createElement(vnode.type))
+    const el = (vnode.el = createElement(vnode.type)) // 创建元素(真实dom)
 
     if (typeof vnode.children === 'string') {
       // 子节点是文本
       setElementText(el, vnode.children)
     } else if (Array.isArray(vnode.children)) {
       // 子节点是数组
+      /* 先递归调用patch生成子节点(insert到el中),再生成父节点(insert到container中) */
+
       vnode.children.forEach((child) => patch(null, child, el))
     } else if (vnode.children === null) {
       // 空节点
@@ -199,16 +266,15 @@ function createRenderer(options) {
     if (vnode.props) {
       for (const key in vnode.props) {
         // 挂载时
-        patchProps(el, key, null, vnode.props[key])
+        patchProps(el /* 要设置属性的元素 */, key, null, vnode.props[key])
       }
     }
-    insert(container, el)
+    insert(container, el, anchor) // 挂载节点到父容器(真实dom) (会等到所有子节点都insert完毕了才会insert自己)
   }
   return {
     render,
   }
 }
-
 const { render } = createRenderer({
   createElement: (tag) => {
     return document.createElement(tag)
@@ -225,8 +291,11 @@ const { render } = createRenderer({
   setText: (el, text) => {
     el.nodeValue = text
   },
-  insert(parent, el, anchor = null) {
-    parent.appendChild(el)
+  /* 终于知道为什么需要anchor了,因为需要在不需要移动的元素后面插入需要移动的元素
+  (而anchor就是不需要移动的元素的下一个节点)(简单diff算法,1号天才的算法) */
+  async insert(parent, el, anchor = null) {
+    // 如果引用节点(anchor)为 null，则将指定的节点添加到指定父节点(parent)的子节点列表的末尾。
+    parent.insertBefore(el, anchor)
   },
   unmount(vnode) {
     _unmount(vnode)
@@ -235,6 +304,9 @@ const { render } = createRenderer({
         // fragment需要逐个卸载子节点
         vnode.children.forEach((c) => _unmount(c))
         return
+      }
+      if (Array.isArray(vnode.children)) {
+        vnode.children.forEach((c) => _unmount(c))
       }
       const parent = vnode.el.parentNode
       if (parent) {
@@ -261,7 +333,13 @@ const { render } = createRenderer({
           // 第一次绑定事件
           invoker = invokers[eName] = function (e) {
             if (e.timeStamp < invoker.attached) {
-              return // 防止事件冒泡导致父元素事件错误触发
+              // *防止事件冒泡导致父元素事件错误触发,当事件进行冒泡到父元素时,父
+              // 元素接收到的事件对象是子元素的事件对象,所以各种属性都是子元素
+              // 的,所以我们可以根据子元素的timeStamp属性来判断父元素执行时是否
+              // 还没有绑定事件(在绑定事件时会将当前时间戳(高精时间)记录下来,然
+              // 后与子元素事件发生时的时间作对比)
+              // !还是基础不牢!,补红宝书,补犀牛书,补JavaScript基础
+              return
             }
             // 传递的事件可以是数组，需要遍历执行
             if (Array.isArray(invoker.value)) {
@@ -290,7 +368,6 @@ const { render } = createRenderer({
       // 属性设置
       // 如果key是DOM Properties属性
       const type = typeof el[key]
-
       if (type === 'boolean' && nextValue === '') {
         // 修正 el["disabled"] = "" 浏览器会将其设置为false的情况,实际上我们希望为true
         el[key] = true

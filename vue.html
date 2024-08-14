@@ -29,7 +29,8 @@
         setup() {
           const message = Vue.ref('Hello Vue!')
           const btnDom = Vue.ref(null)
-          const reverseMessage = () => {
+          const reverseMessage = (e) => {
+            console.log(e)
             message.value = message.value.split('').reverse().join('')
           }
           Vue.onMounted(() => {

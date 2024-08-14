@@ -15,10 +15,15 @@
   }
 
   function trackScope(error) {
-    const info = error.stack.split('\n')[3]
+    const info =
+      error.stack.split('\n')[3] || error.stack.split('\n')[2] || error.stack.split('\n')[1] //错误位置
     const functionName = info.trim().split(' ')[1] //函数名
-    const scope = info.split('\n')[2] //文件位置
-    const temp = info.split('(')[1].split(getPathSeparator()).pop().split(':')
+    const scope =
+      info.trim().split('\n')[2] || info.trim().split('\n')[1] || info.trim().split('\n')[0] //文件位置
+    const temp = (info.trim().split('(')[1] || info.trim())
+      .split(getPathSeparator())
+      .pop()
+      .split(':')
     const rowAndColumn = temp[1] + ':' + temp[2].substring(temp[2].length - 3, temp[2].length - 1) //行列号
     return [functionName, scope, rowAndColumn]
   }
@@ -27,9 +32,10 @@
     apply(target, thisArg, argumentsList) {
       const error = new Error()
       const stackTrace = trackScope(error)
-      const currentScope = error.stack.split('\n')[2]
-      if (!scopeMap.has(currentScope)) {
-        scopeMap.set(currentScope, true)
+      const currentScope = error.stack.split('\n')[4]
+      const key = currentScope + JSON.stringify({ argumentsList })
+      if (!scopeMap.has(key)) {
+        scopeMap.set(key, true)
         let args = argumentsList.slice()
         args = args.map((item) => {
           if (typeof item === 'object') {
@@ -62,7 +68,22 @@ function exampleFunction() {
     log('hello world', '121', obj)
   }
 }
+function a() {
+  function b() {
+    c()
+    function c() {
+      d()
+      function d() {
+        log('hello world', '12112', obj)
+      }
+    }
+  }
+  b()
+}
+a()
 exampleFunction()
 obj.a = 121
 
-console.log(obj) // { a: 121 }
+log(obj) // { a: 121 }a
+log({ a: 12 }) // { a: 121 }a
+log({ a: 1299 }) // { a: 121 }a

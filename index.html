@@ -32,19 +32,19 @@
      * }
      */
     effect(async () => {
-      const commentNode = {
-        type: Comment,
-        children:
-          comment.value /* 这一步就进行了get,就会收集依赖,所以commentNode的创建要在effect里面 */,
-      }
-      const textNode = {
-        type: Text,
-        children: text.value /* 这一步就进行了get,就会收集依赖,所以textNode的创建要在effect里面 */,
-      }
-      const fragmentNode = {
-        type: Fragment,
-        children: [textNode, commentNode],
-      }
+      // const commentNode = {
+      //   type: Comment,
+      //   children:
+      //     comment.value /* 这一步就进行了get,就会收集依赖,所以commentNode的创建要在effect里面 */,
+      // }
+      // const textNode = {
+      //   type: Text,
+      //   children: text.value /* 这一步就进行了get,就会收集依赖,所以textNode的创建要在effect里面 */,
+      // }
+      // const fragmentNode = {
+      //   type: Fragment,
+      //   children: [textNode, commentNode],
+      // }
       /**
        * 如果把textNode和commentNode的创建移到effect外面,
        * 那在effect中
@@ -57,36 +57,62 @@
        * 所以我们要在effect里读取响应式数据，而不是直接将获取到的响应式数据给到某一个值以期望可以与副作用函数建立联系，这样是不行的
        */
 
-      const node1 = {
+      /* patch时,会进入子节点,然后对子节点patch完了才会退出到父节点 */
+      const oldeNode = {
         type: 'div',
         children: [
-          { type: 'p', children: text.value + '666', key: 1 },
-          { type: 'p', children: text.value, key: 1 },
-          { type: 'p', children: text.value, key: 1 },
+          { type: 'p', children: '1', key: 1 },
+          {
+            type: 'p',
+            children: [
+              {
+                type: 'span',
+                children: [
+                  { type: Text, children: '文本' },
+                  { type: 'a', children: '123', key: 123 },
+                ],
+                key: 5,
+              },
+            ],
+            key: 2,
+          },
+          { type: 'p', children: '3', key: 3 },
+          { type: 'p', children: 'xygod', key: 4 },
         ],
       }
-      const node2 = {
+      const newNode = {
         type: 'div',
         children: [
-          { type: 'p', children: text.value + '1', key: 1 },
-          { type: 'p', children: text.value + '2', key: 1 },
-          { type: 'p', children: text.value + '3', key: 1 },
+          { type: 'p', children: 'xygodcyx', key: 3 },
+          {
+            type: 'p',
+            children: [
+              {
+                type: 'span',
+                children: [
+                  { type: 'a', children: '1233121', key: 123 },
+                  { type: Text, children: '文本1221' },
+                ],
+                key: 5,
+              },
+            ],
+            key: 2,
+          },
+          { type: 'p', children: '1', key: 1 },
+          { type: 'p', children: '3', key: 4 },
         ],
-      }
-      const node3 = {
-        type: 'div',
-        children: [fragmentNode],
       }
       // render(node1, document.querySelector('#app'))
       // render(node1, document.querySelector('#app')) // 2s后会先更新,然后更新
-      // await new Promise((re) => {
-      //   setTimeout(re, 1000)
-      // })
-      render(node2, document.querySelector('#app')) // 1s后立即触发更新,把node1覆盖,然后2s后重复这个操作
+      render(oldeNode, document.querySelector('#app')) // 1s后立即触发更新,把node1覆盖,然后2s后重复这个操作
+      await new Promise((re) => {
+        setTimeout(re, 1000)
+      })
+      render(newNode, document.querySelector('#app')) // 1s后立即触发更新,把node1覆盖,然后2s后重复这个操作
     })
     setTimeout(() => {
-      text.value = '小红'
-      comment.value = '注释2'
+      // text.value = '小红'
+      // comment.value = '注释2'
     }, 1000)
   </script>
 </html>

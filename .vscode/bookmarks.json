@@ -44,12 +44,17 @@
 			"path": "dev/rendererDev.js",
 			"bookmarks": [
 				{
-					"line": 32,
+					"line": 34,
 					"column": 16,
 					"label": ""
 				},
 				{
-					"line": 212,
+					"line": 142,
+					"column": 55,
+					"label": ""
+				},
+				{
+					"line": 278,
 					"column": 28,
 					"label": ""
 				}

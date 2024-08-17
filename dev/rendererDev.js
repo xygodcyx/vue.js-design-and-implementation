@@ -139,8 +139,9 @@ function createRenderer(options) {
         // 旧节点也是数组，这里涉及diff算法
         const oldChildren = n1.children
         const newChildren = n2.children
-        // simpleDiff(oldChildren, newChildren, container)
-        doubleEndDiff(oldChildren, newChildren, container)
+        // simpleDiff(oldChildren, newChildren, container) // 简单diff算法
+        // doubleEndDiff(oldChildren, newChildren, container) // 双端diff算法
+        quickDiff(oldChildren, newChildren, container) // 快速diff算法
       } else {
         // 旧节点是文本或null
         // 无论是那种情况,都需要先清空旧节点,然后挂载新节点
@@ -160,6 +161,7 @@ function createRenderer(options) {
     }
   }
   function simpleDiff(oldChildren, newChildren, container) {
+    console.time('simpleDiff')
     let lastIndex = 0
     // 更新、移动和添加
     for (let i = 0; i < newChildren.length; i++) {
@@ -221,8 +223,10 @@ function createRenderer(options) {
         unmount(oldChildren[i])
       }
     }
+    console.timeEnd('simpleDiff')
   }
   function doubleEndDiff(oldChildren, newChildren, container) {
+    console.time('doubleEndDiff')
     // 四个索引值
     let oldStartIndex = 0
     let oldEndIndex = oldChildren.length - 1
@@ -300,12 +304,52 @@ function createRenderer(options) {
         unmount(oldChildren[i])
       }
     }
+    console.timeEnd('doubleEndDiff')
+  }
+  function quickDiff(oldChildren, newChildren, container) {
+    console.time('quickDiff')
+    // 更新相同的前置节点(开头相同的节点)
+    let j = 0
+    let oldVNode = oldChildren[j]
+    let newVNode = newChildren[j]
+    while (oldVNode.key === newVNode.key) {
+      patch(oldVNode, newVNode, container)
+      j++
+      oldVNode = oldChildren[j]
+      newVNode = newChildren[j]
+    }
+    // 更新相同的后置节点(末尾相同的节点)
+    let oldEndIndex = oldChildren.length - 1
+    let newEndIndex = newChildren.length - 1
+    oldVNode = oldChildren[oldEndIndex]
+    newVNode = newChildren[newEndIndex]
+    while (oldVNode.key === newVNode.key) {
+      patch(oldVNode, newVNode, container)
+      oldEndIndex--
+      newEndIndex--
+      oldVNode = oldChildren[oldEndIndex]
+      newVNode = newChildren[newEndIndex]
+    }
+    if (newEndIndex >= j && oldEndIndex < j) {
+      // 有遗留的新节点,需要添加
+      const anchorIndex = newEndIndex + 1
+      const anchor = anchorIndex < newChildren.length ? newChildren[anchorIndex].el : null
+      while (newEndIndex >= j /* 因为j在++,会有一刻newEndIndex < j */) {
+        patch(null, newChildren[j++], container, anchor)
+      }
+    } else if (newEndIndex < j && oldEndIndex >= j) {
+      while (oldEndIndex >= j /* 因为j在++,会有一刻newEndIndex < j  */) {
+        unmount(oldChildren[j++])
+      }
+    } else {
+      // 非理性情况
+    }
+    console.timeEnd('quickDiff')
   }
 
   function mountElement(vnode, container, anchor = null) {
     // 将vnode的真实节点保存到el中,为了后续的更新和卸载
     const el = (vnode.el = createElement(vnode.type)) // 创建元素(真实dom)
-
     if (typeof vnode.children === 'string') {
       // 子节点是文本
       setElementText(el, vnode.children)

@@ -307,7 +307,6 @@ function createRenderer(options) {
     console.timeEnd('doubleEndDiff')
   }
   function quickDiff(oldChildren, newChildren, container) {
-    console.time('quickDiff')
     // 更新相同的前置节点(开头相同的节点)
     let j = 0
     let oldVNode = oldChildren[j]
@@ -338,13 +337,79 @@ function createRenderer(options) {
         patch(null, newChildren[j++], container, anchor)
       }
     } else if (newEndIndex < j && oldEndIndex >= j) {
+      // 有遗留的旧节点,需要卸载
       while (oldEndIndex >= j /* 因为j在++,会有一刻newEndIndex < j  */) {
         unmount(oldChildren[j++])
       }
     } else {
-      // 非理性情况
+      // 非理想情况
+      const count = newEndIndex - j + 1 /* 算出没有被处理的新节点的数量 */
+      const sources = new Array(count)
+      sources.fill(-1)
+      const oldStart = j
+      const newStart = j
+      let moved = false
+      let pos = 0
+      const keyIndex = {}
+      for (let i = newStart; i <= newEndIndex; i++) {
+        keyIndex[newChildren[i].key] = i
+      }
+      let patched = 0
+      for (let i = oldStart; i <= oldEndIndex; i++) {
+        oldVNode = oldChildren[i]
+        if (patched <= count) {
+          const k = keyIndex[oldVNode.key]
+          if (typeof k !== 'undefined') {
+            newVNode = newChildren[k]
+            patch(oldVNode, newVNode, container)
+            patched++
+            sources[k - newStart] = i
+            if (k < pos) {
+              // 更新
+              moved = true
+            } else {
+              pos = k
+            }
+          } else {
+            // 在旧节点中没找到与新节点对应的k,需要卸载
+            unmount(oldVNode)
+          }
+        } else {
+          // 旧节点的长度大于新节点的长度,需要卸载
+          unmount(oldVNode)
+        }
+      }
+      if (moved) {
+        /*
+        获取sources的最长递增子序列,拿到子序列在source中的最长递增子索引序列,
+        在这个索引序列中相对应的节点不需要移动(因为已经是递增的状态了(在旧节点中的顺序是递增的))
+        */
+        const seq = getSequence(sources)
+        let s = seq.length - 1
+        let i = count - 1
+        for (i; i >= 0; i--) {
+          if (sources[i] === -1) {
+            // 需要挂载
+            const pos = newStart + i /* 需要挂载的节点在新节点中的位置 */
+            const newVNode = newChildren[pos]
+            const nextPos = pos + 1
+            const anchor = nextPos < newChildren.length ? newChildren[nextPos].el : null
+            patch(null, newVNode, container, anchor)
+          } else if (i !== seq[s]) {
+            // 需要移动
+            const pos = newStart + i
+            const newVNode = newChildren[pos]
+            const nextPos = pos + 1
+            const anchor = nextPos < newChildren.length ? newChildren[nextPos].el : null
+            // 移动操作
+            insert(container, newVNode.el, anchor)
+          } else {
+            // 不需要移动
+            s--
+          }
+        }
+      }
     }
-    console.timeEnd('quickDiff')
   }
 
   function mountElement(vnode, container, anchor = null) {
@@ -560,4 +625,46 @@ function normalizeStyle(value) {
   res = transformStyleToString(styleObj)
 
   return res
+}
+
+/* 求出最长递增子序列,并对应到sources的索引 */
+function getSequence(arr) {
+  const p = arr.splice()
+  const result = [0]
+  let i, j, u, v, c
+  const len = arr.length
+  for (i = 0; i < len; i++) {
+    const arrI = arr[i]
+    if (arrI !== 0) {
+      j = result[result.length - 1]
+      if (arr[j] < arrI) {
+        p[i] = j
+        result.push(i)
+        continue
+      }
+      u = 0
+      v = result.length - 1
+      while (u < v) {
+        c = ((u + v) / 2) | 0
+        if (arr[result[c]] < arrI) {
+          u = c + 1
+        } else {
+          v = c
+        }
+      }
+      if (arrI < arr[result[u]]) {
+        if (u > 0) {
+          p[i] = result[u - i]
+        }
+        result[u] = i
+      }
+    }
+  }
+  u = result.length
+  v = result[u - 1]
+  while (u-- > 0) {
+    result[u] = v
+    v = p[v]
+  }
+  return result
 }

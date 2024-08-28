@@ -19,9 +19,9 @@
   <script src="dev/rendererDev.js"></script>
 
   <script>
-    const { effect, reactive, ref } = typeof VueReactivity === 'undefined' ? minVue : VueReactivity
-    const text = ref('小明') //ref在定义完毕时就已经时响应式,收集依赖发生在读取.value时
-    const comment = ref('注释')
+    // const { effect, reactive, ref } = typeof VueReactivity === 'undefined' ? minVue : VueReactivity
+    // const text = ref('小明') //ref在定义完毕时就已经时响应式,收集依赖发生在读取.value时
+    // const comment = ref('注释')
     /** const commentNode = {
      *   type: Comment,
      *   children: comment.value // 这一步就进行了get,就会收集依赖,,但是没有在effect里面,所以无法收集依赖,所以commentNode的创建要在effect里面,
@@ -31,66 +31,151 @@
      *   children: text.value, // 这一步就进行了get操作,就会收集依赖,但是没有在effect里面,所以无法收集依赖,所以textNode的创建要在effect里面,
      * }
      */
-    effect(async () => {
-      // const commentNode = {
-      //   type: Comment,
-      //   children:
-      //     comment.value /* 这一步就进行了get,就会收集依赖,所以commentNode的创建要在effect里面 */,
-      // }
-      // const textNode = {
-      //   type: Text,
-      //   children: text.value /* 这一步就进行了get,就会收集依赖,所以textNode的创建要在effect里面 */,
-      // }
-      // const fragmentNode = {
-      //   type: Fragment,
-      //   children: [textNode, commentNode],
-      // }
-      /**
-       * 如果把textNode和commentNode的创建移到effect外面,
-       * 那在effect中
-       * textNode读取children时其实是原始值"小明",
-       * commentNode读取children时也是原始值"注释",
-       * 这是因为在创建时就已经完成了读取操作,并将text.value和comment.value的值读取进children中,
-       * 并且完成了依赖收集,所以在node.children里的数据其实是:
-       * { type: Text, children: "小明" }
-       * { type: Comment, children: "注释" }
-       * 所以我们要在effect里读取响应式数据，而不是直接将获取到的响应式数据给到某一个值以期望可以与副作用函数建立联系，这样是不行的
-       */
+    /* 普通原生html节点 */
+    // effect(async () => {
+    //   // const commentNode = {
+    //   //   type: Comment,
+    //   //   children:
+    //   //     comment.value /* 这一步就进行了get,就会收集依赖,所以commentNode的创建要在effect里面 */,
+    //   // }
+    //   // const textNode = {
+    //   //   type: Text,
+    //   //   children: text.value /* 这一步就进行了get,就会收集依赖,所以textNode的创建要在effect里面 */,
+    //   // }
+    //   // const fragmentNode = {
+    //   //   type: Fragment,
+    //   //   children: [textNode, commentNode],
+    //   // }
+    //   /**
+    //    * 如果把textNode和commentNode的创建移到effect外面,
+    //    * 那在effect中
+    //    * textNode读取children时其实是原始值"小明",
+    //    * commentNode读取children时也是原始值"注释",
+    //    * 这是因为在创建时就已经完成了读取操作,并将text.value和comment.value的值读取进children中,
+    //    * 并且完成了依赖收集,所以在node.children里的数据其实是:
+    //    * { type: Text, children: "小明" }
+    //    * { type: Comment, children: "注释" }
+    //    * 所以我们要在effect里读取响应式数据，而不是直接将获取到的响应式数据给到某一个值以期望可以与副作用函数建立联系，这样是不行的
+    //    */
 
-      /* patch时,会进入子节点,然后对子节点patch完了才会退出到父节点 */
-      const oldeNode = {
-        type: 'div',
-        children: [
-          { type: 'p', children: '1', key: 1 },
-          { type: 'p', children: '2', key: 2 },
-          { type: 'p', children: '3', key: 3 },
-          { type: 'p', children: 'xygod', key: 4 },
-          { type: 'p', children: '6', key: 6 },
-          { type: 'p', children: '5', key: 5 },
-        ],
-      }
-      const newNode = {
-        type: 'div',
-        children: [
-          { type: 'p', children: '1', key: 1 },
-          { type: 'p', children: '3', key: 3 },
-          { type: 'p', children: 'xygodcyx', key: 4 },
-          { type: 'p', children: '2', key: 2 },
-          { type: 'p', children: '7', key: 7 },
-          { type: 'p', children: '5', key: 5 },
-        ],
-      }
-      // render(node1, document.querySelector('#app'))
-      // render(node1, document.querySelector('#app')) // 2s后会先更新,然后更新
-      render(oldeNode, document.querySelector('#app')) // 1s后立即触发更新,把node1覆盖,然后2s后重复这个操作
-      await new Promise((re) => {
-        setTimeout(re, 1000)
-      })
-      render(newNode, document.querySelector('#app')) // 1s后立即触发更新,把node1覆盖,然后2s后重复这个操作
-    })
+    //   /* patch时,会进入子节点,然后对子节点patch完了才会退出到父节点 */
+    //   const oldeNode = {
+    //     type: 'div',
+    //     children: [
+    //       { type: 'p', children: '1', key: 1 },
+    //       { type: 'p', children: '2', key: 2 },
+    //       { type: 'p', children: '3', key: 3 },
+    //       { type: 'p', children: 'xygod', key: 4 },
+    //       { type: 'p', children: '6', key: 6 },
+    //       { type: 'p', children: '5', key: 5 },
+    //     ],
+    //   }
+    //   const newNode = {
+    //     type: 'div',
+    //     children: [
+    //       { type: 'p', children: '1', key: 1 },
+    //       { type: 'p', children: '3', key: 3 },
+    //       { type: 'p', children: 'xygodcyx', key: 4 },
+    //       { type: 'p', children: '2', key: 2 },
+    //       { type: 'p', children: '7', key: 7 },
+    //       { type: 'p', children: '5', key: 5 },
+    //     ],
+    //   }
+    //   // render(node1, document.querySelector('#app'))
+    //   // render(node1, document.querySelector('#app')) // 2s后会先更新,然后更新
+    //   render(oldeNode, document.querySelector('#app')) // 1s后立即触发更新,把node1覆盖,然后2s后重复这个操作
+    //   await new Promise((re) => {
+    //     setTimeout(re, 1000)
+    //   })
+    //   render(newNode, document.querySelector('#app')) // 1s后立即触发更新,把node1覆盖,然后2s后重复这个操作
+    // })
+    // setTimeout(() => {
+    //   // text.value = '小红'
+    //   // comment.value = '注释2'
+    // }, 1000)
+
+    const text = ref('xygod')
+    const myComponent1 = {
+      name: 'component',
+      data() {
+        return {
+          text: text.value,
+          a: 1,
+          b: 2,
+        }
+      },
+      props: {
+        title: String,
+      },
+      mounted() {
+        this.autoRun()
+        console.log(this.sum.value)
+        console.log(this.allTitle.value)
+      },
+      methods: {
+        autoRun() {
+          console.log(this.title)
+        },
+      },
+      computed: {
+        sum() {
+          return this.a + this.b
+        },
+        allTitle() {
+          return this.title + ' ' + '标题'
+        },
+      },
+      render(state) {
+        return {
+          type: 'div',
+          props: {
+            id: 'hello',
+          },
+          children: `hello,my name is ${this.allTitle.value}`,
+        }
+      },
+    }
+
+    const myComponent2 = {
+      name: 'component',
+      data() {
+        return {
+          text: 'xygodcyx',
+        }
+      },
+      props: {
+        title: String,
+      },
+      render(state) {
+        return {
+          type: 'div',
+          props: {
+            id: 'hello',
+          },
+          children: `hello,my name is ${this.text}`,
+        }
+      },
+    }
+
+    const componentVNode1 = {
+      type: myComponent1,
+      props: {
+        title: 'A big Title',
+        other: text.value + '1',
+      },
+    }
+    const componentVNode2 = {
+      type: myComponent2,
+      props: {
+        title: 'A Small Title',
+        other: text.value + '1',
+      },
+    }
+    render(componentVNode1, document.querySelector('#app'))
+    // render(componentVNode2, document.querySelector('#app'))
+
     setTimeout(() => {
-      // text.value = '小红'
-      // comment.value = '注释2'
+      text.value = 'xygodcyx'
     }, 1000)
   </script>
 </html>

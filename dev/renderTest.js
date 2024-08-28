@@ -1,4 +1,4 @@
-function createRender2(options) {
+;(function createRender(options) {
   const Text = Symbol()
   const Comment = Symbol()
   const Fragment = Symbol()
@@ -7,7 +7,7 @@ function createRender2(options) {
     const el = vnode.el
     el.removeChildren()
   }
-  function render2(vnode, container) {
+  function render(vnode, container) {
     const oldVnode = container._vnode
     if (vnode) {
       patch2(oldVnode, vnode, container)
@@ -52,7 +52,7 @@ function createRender2(options) {
     if (el.props) {
       // 设置props
     }
-    inertElement(vnode, container, null)
+    inert(vnode, container, null)
   }
   function patchElement(oldVnode, newVnode) {
     const el = (newVnode.el = oldVnode.el)
@@ -141,10 +141,8 @@ function createRender2(options) {
       }
     }
   }
-  function inertElement(vnode, container, anchor) {
-    container.before(vnode.el, anchor)
+  function inert(vnode, container, anchor) {
+    container.insertBefore(vnode.el, anchor)
   }
-  return render2
-}
-
-const render2 = createRender2({})
+  return render
+})()

@@ -1,6 +1,8 @@
 const Text = Symbol() // 描述文本节点
 const Comment = Symbol() // 描述注释节点
 const Fragment = Symbol() // 描述片段节点
+const { effect, reactive, computed, shallowReactive, ref } =
+  typeof VueReactivity === 'undefined' ? minVue : VueReactivity
 function createRenderer(options) {
   const {
     createElement,
@@ -84,16 +86,24 @@ function createRenderer(options) {
         // 如果n1不存在,逐个挂载子节点即可,因为是fragment节点,不需要挂载父节点
         n2.children.forEach((c) => patch(null, c, container))
       } else {
-        // 如果n1存在,那么只需要更新fragment节点的children即可(因为fragment节点没有真实节点)
-        /* 走patchChildren不会错,因为patchelement里最终会执行patch */
+        // 如果n1存在,那么只需要更新fragment节点的children即可(因为fragment节点没有真实节点也就没有各种dom属性)
+        /* 走patchChildren不会错,因为patchelement里最终会执行patch(对children进行patch) */
         patchChildren(n1, n2, container)
       }
     } else if (typeof type === 'object') {
+      if (!n1) {
+        mountComponent(n2, container, anchor)
+      } else {
+        patchComponent(n1, n2, container, anchor)
+      }
       // 组件
     } else if (typeof type === '??') {
       // 其他
     }
   }
+  /* 先更新自身的属性(props),然后更新子节点,子节点最终会调用patch进行挂载或更新,为什么调用patch呢?
+     因为无法子节点的类型无法确定,所以全部过一遍patch确保每一种子节点都能被正确处理
+  */
   function patchElement(n1, n2) {
     const el = (n2.el = n1.el) /* 拿到自身的dom节点,因为自己的子节点的容器是这个 */
     // 更新属性
@@ -166,7 +176,6 @@ function createRenderer(options) {
     // 更新、移动和添加
     for (let i = 0; i < newChildren.length; i++) {
       const newVNode = newChildren[i]
-      // // 不需要每次都从0开始遍历,只需要从上次找到的位置开始就行
       let j = 0
       let find = false
       for (j; j < oldChildren.length; j++) {
@@ -186,7 +195,8 @@ function createRenderer(options) {
             const prevNode = newChildren[i - 1]
 
             if (prevNode) {
-              const anchor = prevNode.el.nextSibling /* 拿到前一个节点的下一个节点的真实dom */
+              /* 拿到前一个节点的下一个节点的真实dom,这是原生JavaScript的api */
+              const anchor = prevNode.el.nextSibling
               // 获取anchor的思想也极其巧妙,如果没有anchor,那么就说明不需要
               // 移动的元素在旧节点树的最后,那就直接插入到最后即可
               // 因为更新的目的就是把当前找到的节点的真实dom插入到新节点的真实dom后面(按新节点的顺序)
@@ -194,7 +204,6 @@ function createRenderer(options) {
             } else {
               // 如果prevNode不存在,那么说明是第一个节点,那么不需要移动,因为它的第一个,其他的旧节点应该移动到它的后面
             }
-            // insert(container, el)
           } else {
             lastIndex = j
           }
@@ -438,6 +447,166 @@ function createRenderer(options) {
     }
     insert(container, el, anchor) // 挂载节点到父容器(真实dom) (会等到所有子节点都insert完毕了才会insert自己)
   }
+  function mountComponent(vnode, container, anchor) {
+    const componentOptions = vnode.type
+    const {
+      render,
+      data,
+      props: propsOptions /* 这是组件上的props(定义的props,比如我要title,我要name) */,
+      methods /* 方法 */,
+      computed: computedOptions /* 计算属性 */,
+      beforeCreate,
+      created,
+      beforeMount,
+      mounted,
+      beforeUpdate,
+      updated,
+    } = componentOptions
+
+    beforeCreate && beforeCreate()
+    const state = data ? reactive(data()) : null
+    /* vnode.props是虚拟节点上的props,是传递给组件的props值(实际的值,给你title,给你name) */
+    const [props, attrs] = resolveProps(propsOptions, vnode.props)
+    const instance = {
+      state,
+      props: shallowReactive(props),
+      attrs /* 不是响应式的 */,
+      isMounted: false,
+      methods,
+      computed: computedOptions,
+      subTree: null,
+    }
+    vnode.component = instance
+
+    /* 这个上下文的作用就是当用户使用数据时可以不用考虑是state还是props等等,可以无压力的使用数据
+       因为vue会根据k在那个属性上从而动态的返回响应的数据
+    */
+    const renderContext = new Proxy(instance, {
+      get(t, k, r) {
+        const { state, props, methods, computed } = t
+        if (state && k in state) {
+          return state[k]
+        } else if (k in props) {
+          return props[k]
+        } else if (k in attrs) {
+          return attrs[k]
+        } else if (k in methods) {
+          return methods[k]
+        } else if (k in computed) {
+          return computed[k]
+        } else {
+          console.error(`读取失败,${k}不在vnode上`)
+        }
+      },
+      set(t, k, v, r) {
+        const { state, props } = t
+        if (state && k in state) {
+          state[k] = v
+        } else if (k in attrs) {
+          attrs[k] = v
+        } else if (k in props) {
+          console.warn(`试图修改prop${k},属性是只读的`)
+        } else {
+          console.error(`修改失败,${k}不在vnode上`)
+        }
+        return true
+      },
+    })
+    instance.computed = resolveComputed(computedOptions, renderContext)
+
+    created && created.call(renderContext)
+    /* 会返回一个vnode节点,然后就以vnode的处理方式进行patch挂载,子节点会自动的递归处理 */
+    effect(
+      () => {
+        const subTree = render.call(renderContext, renderContext)
+        if (!instance.isMounted) {
+          beforeMount && beforeMount.call(renderContext)
+          patch(null, subTree, container, anchor)
+          instance.isMounted = true
+          mounted && mounted.call(renderContext)
+        } else {
+          beforeUpdate && beforeUpdate.call(renderContext)
+          patch(instance.subTree, subTree, container, anchor)
+          updated && updated.call(renderContext)
+        }
+        instance.subTree = subTree
+      },
+      {
+        scheduler: useQueueJob(),
+      }
+    )
+  }
+  function resolveComputed(computeds, ctx) {
+    const res = {}
+    for (const key in computeds) {
+      const getter = computeds[key]
+      if (typeof getter !== 'function') {
+        console.warn(`${key}不是getter`)
+        continue
+      }
+      res[key] = computed(getter.bind(ctx))
+    }
+    return res
+  }
+  function patchComponent(n1, n2, container, anchor) {
+    const instance = (n2.component = n1.component)
+    const { props, attrs } = instance /* 在组件里定义的props */
+    if (hasPropsChanged(n1.props, n2.props)) {
+      // 有props改变了,需要更新props
+      const [nextProps] = resolveProps(n2.type.props, n2.props)
+      for (const k in nextProps) {
+        // 更新props
+        props[k] = nextProps[k]
+      }
+      for (const k in props) {
+        if (!(k in nextProps)) {
+          // 如果有prop不存在于新的props那就删除掉这个prop(预设的,在组件里定义的)
+          delete props[k]
+        }
+      }
+    }
+    if (hasPropsChanged(n1.attrs, n2.attrs)) {
+      // 有props改变了,需要更新props
+      const [_, nextAttrs] = resolveProps(n2.type.attrs, n2.attrs)
+      for (const k in nextAttrs) {
+        // 更新props
+        attrs[k] = nextAttrs[k]
+      }
+      for (const k in attrs) {
+        if (!(k in nextAttrs)) {
+          // 如果有prop不存在于新的props那就删除掉这个prop(预设的,在组件里定义的)
+          delete attrs[k]
+        }
+      }
+    }
+  }
+
+  function resolveProps(options, propsData) {
+    const props = {}
+    const attrs = {}
+    for (const key in propsData) {
+      if (key in options) {
+        props[key] = propsData[key]
+      } else {
+        attrs[key] = propsData[key]
+      }
+    }
+    return [props, attrs]
+  }
+
+  function hasPropsChanged(prevProps, nextProps) {
+    const nextKeys = Object.keys(nextProps)
+    if (nextKeys.length !== Object.keys(prevProps).length) {
+      return true
+    }
+    for (let i = 0; i < nextKeys.length; i++) {
+      const key = nextKeys[i]
+      if (prevProps[key] !== nextKeys[key]) {
+        return true
+      }
+    }
+    return false
+  }
   return {
     render,
   }
@@ -667,4 +836,29 @@ function getSequence(arr) {
     v = p[v]
   }
   return result
+}
+
+function useQueueJob() {
+  const queue = new Set()
+  const p = Promise.resolve()
+  const isFlash = false
+  function queueJob(
+    job /* 传来要添加到微队列里的函数,这里是在data数据发生改变后将要执行的副作用函数 */
+  ) {
+    queue.add(job)
+    if (!isFlash) {
+      isFlash = true
+      p.then(() => {
+        try {
+          queue.forEach((job) => {
+            job()
+          })
+        } finally {
+          isFlash = false
+          queue.clear = 0
+        }
+      })
+    }
+  }
+  return queueJob
 }

@@ -6,6 +6,8 @@ const minVue = (function (exports) {
   let MAP_KEY_ITERATE_KEY = Symbol() //Returns a new unique Symbol value.
   // 可以通过这个key找到响应式数据的原始数据,因为是全局唯一,所以不可能重复
   let RAW_KEY = Symbol() //Returns a new unique Symbol value.
+  // 这个是计算属性的依赖收集 唯一键名
+  let COMPUTED_VALUE_KEY = Symbol() //Returns a new unique Symbol value.
 
   // 为了解决类似于数组includes方法查找非原始值会将两个不同的代理对象(或一个代理对象一个原始值,比如直接在includes里传入非原始值{a:1}而不是通过响应式数据的索引)
   // 进行比较,而这就导致了和预期不同的结果(明明键值对完全一样,但是不相等--new proxy的原因,既然new proxy无法改变,那么就
@@ -234,7 +236,7 @@ const minVue = (function (exports) {
       // 执行副作用函数,执行副作用函数的目的是触发代理对象的get拦截,然后收集依赖
       // 至于为什么要拿到因为副作用用户传来的函数的返回值,是因为这个函数可能是一个getters函数，需要执行才能拿到值,我们可以在computed和watch中使用
       const res = wantRegisterEffectFunction()
-      /* 
+      /*
          为什么要用一个副作用栈临时储存副作用函数呢?因为要注册副作用函数(registerEffect)可能会发生嵌套,如果发生嵌套而且没有
          副作用栈的话,只有一个activeEffect,这时候执行内层副作用函数的时候,外层的副作用函数会被内层的副作用函数覆盖(activeEffect被覆盖),
          而且在内层执行完毕的时候activeEffect再次运行外层副作用函数时activeEffect也不会指向外层函数,这就导致了外层函数没有被正确的收集,导致了错误
@@ -589,7 +591,7 @@ const minVue = (function (exports) {
           dirty = true
           // we HM call trigger call computed'effect when getter includes reactive value changed
           // 在值脏了以后手动触发副作用函数
-          trigger(obj, 'value')
+          trigger(obj, COMPUTED_VALUE_KEY)
         }
       },
       // 为什么是懒执行呢?因为我们需要对副作用函数的执行时机进行控制,
@@ -600,12 +602,23 @@ const minVue = (function (exports) {
     const obj = {
       get value() {
         if (dirty) {
-          value = effect() //这个函数的返回值就是传入的getter函数的返回值,所以computed函数的返回值就是getter函数的返回值,但中间我们做了computed的一些处理(依赖收集)
+          //这个函数的返回值就是传入的getter函数的返回值,所以computed函数的返回
+          //值就是getter函数的返回值,但中间我们做了computed的一些处理(依赖收集)
+          value = effect()
           dirty = false
           // we HM call track collect computed'effect when computed'value get
-          // 手动收集计算属性的依赖(在registerEffect函数里传入的函数)
-          track(obj, 'value')
         }
+        // 手动收集计算属性的依赖(在外部registerEffect函数里传入的函数,可能是watch里面的)
+
+        //? (bug,已解决,这里记录解决思路 在setup里使用watch监听computed)要在外面
+        //直接收集, 不然会导致使用watch结合computed时出现副作用函数没有正确收集
+        //的问题,原因是在watch的getter里读取了计算属性的value,导致dirty变成了
+        //false,这时候是能正确track的,但是接着往下走,在return的渲染函数里使用了
+        //sum,然后又会进行get,但是因为dirty是false所以不会进行track导致渲染函数
+        //没有正确的被收集,这就导致了虽然computed的值会改变但是与之关联的函数(渲
+        //染函数)没有重新执行,所以一定要把track放在一get就能触发的位置而不是
+        //dirty为true的时候才track
+        track(obj, COMPUTED_VALUE_KEY)
         return value
       },
     }
@@ -656,15 +669,24 @@ const minVue = (function (exports) {
 
     function doJob() {
       // that step is get latest value
-      newValue = effectFun()
+      if (typeof newValue === 'object' && !Array.isArray(newValue)) {
+        newValue = JSON.parse(JSON.stringify(effectFun()))
+      } else {
+        newValue = effectFun()
+      }
       // that branch will execute when register onInvalidate function , cleanFun variable will change to be you register function , if that exist then will call before with watch callback
       // 其实是调用了上次传入的清除函数,执行清理工作,然后再执行当前的副作用函数
       if (cleanFun) {
         cleanFun()
       }
+
       // you callback function
       cb(newValue, oldValue, onInvalidate)
-      oldValue = newValue
+      if (typeof oldValue === 'object' && !Array.isArray(oldValue)) {
+        oldValue = JSON.parse(JSON.stringify(newValue))
+      } else {
+        oldValue = newValue
+      }
     }
 
     // 这是watch的核心,这个effectFun的返回值就是传入的getter的返回值,也就是我们传入的要观察的值
@@ -676,7 +698,7 @@ const minVue = (function (exports) {
     const effectFun = registerEffect(
       () => getter() /* 这个getter很有意思,需要经常揣摩,目的其实就是进行依赖收集(读取值)*/,
       {
-        lazy: true, // 设置懒执行是因为我们需要手动管理副作用函数的执行时机,比如立即执行啊,和获取新久值啊
+        lazy: true, // 设置懒执行是因为我们需要手动管理副作用函数的执行时机,比如立即执行啊,和获取新旧值啊
         scheduler() {
           if (options.flush === 'post') {
             const p = Promise.resolve()
@@ -690,7 +712,11 @@ const minVue = (function (exports) {
     if (options.immediate) {
       doJob()
     } else {
-      oldValue = effectFun()
+      if (typeof oldValue === 'object' && !Array.isArray(oldValue)) {
+        oldValue = JSON.parse(JSON.stringify(effectFun()))
+      } else {
+        oldValue = effectFun() /* effectFun是一个getter,返回要监听的属性值或对象 */
+      }
     }
   }
   exports.effect = registerEffect
@@ -701,5 +727,6 @@ const minVue = (function (exports) {
   exports.readonly = readonly
   exports.shallowReadonly = shallowReadonly
   exports.ref = ref
+  exports.bucket = bucket
   return exports
 })({})

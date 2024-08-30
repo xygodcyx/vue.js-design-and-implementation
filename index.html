@@ -15,11 +15,11 @@
   </body>
 
   <!-- <script src="https://unpkg.com/@vue/reactivity@3.0.5/dist/reactivity.global.js"></script> -->
+  <!-- <script src="https://unpkg.com/vue@3"></script> -->
   <script src="./reactivity/reactive.js"></script>
   <script src="dev/rendererDev.js"></script>
 
   <script>
-    // const { effect, reactive, ref } = typeof VueReactivity === 'undefined' ? minVue : VueReactivity
     // const text = ref('小明') //ref在定义完毕时就已经时响应式,收集依赖发生在读取.value时
     // const comment = ref('注释')
     /** const commentNode = {
@@ -94,8 +94,91 @@
     //   // comment.value = '注释2'
     // }, 1000)
 
-    const text = ref('xygod')
+    // const text = ref('xygod')
+
     const myComponent1 = {
+      name: 'component',
+      data() {
+        return {
+          text: 'xygod',
+          a: 1,
+          b: 2,
+        }
+      },
+      props: {
+        title: {
+          type: String,
+          default: '默认值',
+        },
+      },
+      mounted() {
+        // this.autoRun()
+      },
+      methods: {
+        autoRun() {
+          console.log(this.title)
+        },
+        updateText() {
+          this.text += Math.random().toFixed(1).toString()
+        },
+      },
+      computed: {
+        sum() {
+          return this.a + this.b
+        },
+        allTitle() {
+          return this.title + ' ' + '标题'
+        },
+      },
+      watch: {
+        text(n) {
+          this.$emit('updateText', n)
+        },
+        sum(n, o) {
+          // console.log(n, o)
+        },
+        a(n, o) {
+          // console.log(n, o)
+        },
+      },
+      render(state) {
+        return {
+          type: 'div',
+          props: {
+            id: 'hello',
+          },
+          children: [
+            {
+              type: 'button',
+              props: {
+                onClick: () => {
+                  this.a++
+                  this.updateText()
+                },
+              },
+              children: 'a++',
+            },
+            {
+              type: Text,
+              children: `hello,my name is ${this.allTitle.value},sum:${this.sum.value},text:${this.text}`,
+            },
+          ],
+        }
+      },
+    }
+    const componentVNode1 = {
+      type: myComponent1,
+      props: {
+        title: 'xygod',
+        other: 'other',
+        onUpdateText(data) {},
+      },
+      children: {
+        // 插槽
+      },
+    }
+
+    const myComponent2 = {
       name: 'component',
       data() {
         return {
@@ -122,7 +205,7 @@
           return this.a + this.b
         },
         allTitle() {
-          return this.title + ' ' + '标题'
+          return this.title + ' ' + '标题2'
         },
       },
       render(state) {
@@ -136,46 +219,75 @@
       },
     }
 
-    const myComponent2 = {
-      name: 'component',
-      data() {
-        return {
-          text: 'xygodcyx',
-        }
-      },
-      props: {
-        title: String,
-      },
-      render(state) {
-        return {
-          type: 'div',
-          props: {
-            id: 'hello',
-          },
-          children: `hello,my name is ${this.text}`,
-        }
-      },
-    }
-
-    const componentVNode1 = {
-      type: myComponent1,
-      props: {
-        title: 'A big Title',
-        other: text.value + '1',
-      },
-    }
     const componentVNode2 = {
       type: myComponent2,
       props: {
         title: 'A Small Title',
-        other: text.value + '1',
+        other: 'other',
       },
     }
-    render(componentVNode1, document.querySelector('#app'))
-    // render(componentVNode2, document.querySelector('#app'))
 
-    setTimeout(() => {
-      text.value = 'xygodcyx'
-    }, 1000)
+    const myComponentSetup = {
+      name: 'componentSetUp',
+      props: {
+        title: String,
+      },
+      setup(props, { emit, attrs }) {
+        const a = ref(1)
+        const b = ref(2)
+        const sum = computed(() => a.value + b.value)
+        const obj = reactive({ a: 1, b: 2 })
+        watch(sum, (n, o) =>
+          emit('sumUpdate', sum.value, 'update')
+        ) /* 可以正常使用watch结合computed */
+        return () => {
+          return {
+            type: 'div',
+            props: {
+              class: 'green',
+            },
+            children: [
+              {
+                type: 'button',
+                props: {
+                  onClick() {
+                    a.value++
+                    attrs.other = Math.random().toFixed(2)
+                  },
+                },
+                children: `a++`,
+                key: 1,
+              },
+              h(
+                'span',
+                2,
+                {
+                  onClick() {
+                    console.log(1)
+                  },
+                },
+                `hello,my name is ${props.title},sum:${sum.value},attrs:${attrs.other}`
+              ),
+            ],
+          }
+        }
+      },
+    }
+    const componentVNodeSetup = {
+      type: myComponentSetup,
+      props: {
+        title: 'xygod',
+        other: 'other',
+        onSumUpdate(...payload) {
+          console.log('onSumUpdate', ...payload)
+        },
+      },
+      children: {
+        // 插槽,组件的子节点就是插槽
+      },
+    }
+    render(componentVNodeSetup, document.querySelector('#app'))
+    // render(componentVNode1, document.querySelector('#app'))
+    // render(componentVNode2, document.querySelector('#app'))
   </script>
 </html>

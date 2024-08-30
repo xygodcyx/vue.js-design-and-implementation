@@ -1,8 +1,9 @@
 const Text = Symbol() // 描述文本节点
 const Comment = Symbol() // 描述注释节点
 const Fragment = Symbol() // 描述片段节点
-const { effect, reactive, computed, shallowReactive, ref } =
+const { effect, reactive, computed, shallowReactive, shallowReadonly, ref } =
   typeof VueReactivity === 'undefined' ? minVue : VueReactivity
+const { watch } = minVue
 function createRenderer(options) {
   const {
     createElement,
@@ -320,18 +321,22 @@ function createRenderer(options) {
     let j = 0
     let oldVNode = oldChildren[j]
     let newVNode = newChildren[j]
-    while (oldVNode.key === newVNode.key) {
+    while (oldVNode && oldVNode.key === newVNode.key) {
       patch(oldVNode, newVNode, container)
       j++
       oldVNode = oldChildren[j]
       newVNode = newChildren[j]
+    }
+    if (j === oldChildren.length && j === newChildren.length) {
+      // 说明这一遍已经更新完毕了,不需要继续更新了
+      return
     }
     // 更新相同的后置节点(末尾相同的节点)
     let oldEndIndex = oldChildren.length - 1
     let newEndIndex = newChildren.length - 1
     oldVNode = oldChildren[oldEndIndex]
     newVNode = newChildren[newEndIndex]
-    while (oldVNode.key === newVNode.key) {
+    while (oldVNode && oldVNode.key === newVNode.key) {
       patch(oldVNode, newVNode, container)
       oldEndIndex--
       newEndIndex--
@@ -449,12 +454,14 @@ function createRenderer(options) {
   }
   function mountComponent(vnode, container, anchor) {
     const componentOptions = vnode.type
-    const {
+    let {
       render,
       data,
       props: propsOptions /* 这是组件上的props(定义的props,比如我要title,我要name) */,
       methods /* 方法 */,
       computed: computedOptions /* 计算属性 */,
+      watch: watchOptions /* 监听 */,
+      setup /* setup语法 */,
       beforeCreate,
       created,
       beforeMount,
@@ -476,6 +483,37 @@ function createRenderer(options) {
       computed: computedOptions,
       subTree: null,
     }
+    function emit(event, ...payload) {
+      const eventName = `on${event[0].toUpperCase()}${event.slice(1)}`
+      const handle = instance.props[eventName]
+      if (handle) {
+        handle(...payload)
+      } else {
+        console.error(`${event}事件不存在`)
+      }
+    }
+    // setup语法实现
+    const setupContext = { attrs, emit }
+    const setupResult = (setup && setup(shallowReadonly(instance.props), setupContext)) || null
+    let setupState = null
+    if (typeof setupResult === 'function') {
+      // setup返回了一个渲染函数(约定)
+      if (render) {
+        console.error('setup函数已经返回了渲染函数,render函数无效')
+      }
+      render = setupResult
+    } else if (setupResult) {
+      // 没有返回,那就要指定渲染函数,如果没有,那就报错
+      if (!render) {
+        console.error('setup函数没有返回渲染函数,请指定render函数')
+      }
+      setupState = setupResult
+    } else {
+      if (!render) {
+        console.error('setup函数不存在而且没有指定render函数')
+      }
+    }
+
     vnode.component = instance
 
     /* 这个上下文的作用就是当用户使用数据时可以不用考虑是state还是props等等,可以无压力的使用数据
@@ -494,6 +532,12 @@ function createRenderer(options) {
           return methods[k]
         } else if (k in computed) {
           return computed[k]
+        } else if (setupState && k in setupState) {
+          return setupState[k]
+        } else if (k === 'computed') {
+          return computed
+        } else if (k === '$emit') {
+          return emit
         } else {
           console.error(`读取失败,${k}不在vnode上`)
         }
@@ -504,6 +548,8 @@ function createRenderer(options) {
           state[k] = v
         } else if (k in attrs) {
           attrs[k] = v
+        } else if (setupState && k in setupState) {
+          setupState[k] = v
         } else if (k in props) {
           console.warn(`试图修改prop${k},属性是只读的`)
         } else {
@@ -512,7 +558,10 @@ function createRenderer(options) {
         return true
       },
     })
+    // computed
     instance.computed = resolveComputed(computedOptions, renderContext)
+    // watch
+    instance.watch = resolveWatch(watchOptions, renderContext)
 
     created && created.call(renderContext)
     /* 会返回一个vnode节点,然后就以vnode的处理方式进行patch挂载,子节点会自动的递归处理 */
@@ -521,12 +570,12 @@ function createRenderer(options) {
         const subTree = render.call(renderContext, renderContext)
         if (!instance.isMounted) {
           beforeMount && beforeMount.call(renderContext)
-          patch(null, subTree, container, anchor)
+          patch(null, subTree, container, anchor) /* 挂载组件上的vnode */
           instance.isMounted = true
           mounted && mounted.call(renderContext)
         } else {
           beforeUpdate && beforeUpdate.call(renderContext)
-          patch(instance.subTree, subTree, container, anchor)
+          patch(instance.subTree, subTree, container, anchor) /* 更新组件上的vnode */
           updated && updated.call(renderContext)
         }
         instance.subTree = subTree
@@ -548,6 +597,23 @@ function createRenderer(options) {
     }
     return res
   }
+  function resolveWatch(watchOptions, ctx) {
+    const res = {}
+    for (const key in watchOptions) {
+      res[key] = watch(resolveWatchGetter(key, ctx), watchOptions[key].bind(ctx))
+    }
+    return res
+  }
+  function resolveWatchGetter(key, ctx) {
+    let res
+    if (key in ctx['computed']) {
+      res = () => ctx[key].value
+    } else {
+      res = () => ctx[key]
+    }
+    return res
+  }
+
   function patchComponent(n1, n2, container, anchor) {
     const instance = (n2.component = n1.component)
     const { props, attrs } = instance /* 在组件里定义的props */
@@ -566,15 +632,15 @@ function createRenderer(options) {
       }
     }
     if (hasPropsChanged(n1.attrs, n2.attrs)) {
-      // 有props改变了,需要更新props
+      // 有attrs改变了,需要更新attrs
       const [_, nextAttrs] = resolveProps(n2.type.attrs, n2.attrs)
       for (const k in nextAttrs) {
-        // 更新props
+        // 更新attrs
         attrs[k] = nextAttrs[k]
       }
       for (const k in attrs) {
         if (!(k in nextAttrs)) {
-          // 如果有prop不存在于新的props那就删除掉这个prop(预设的,在组件里定义的)
+          // 如果有attr不存在于新的attrs那就删除掉这个attr
           delete attrs[k]
         }
       }
@@ -584,11 +650,19 @@ function createRenderer(options) {
   function resolveProps(options, propsData) {
     const props = {}
     const attrs = {}
+    // 为组件身上定义的props赋值
     for (const key in propsData) {
-      if (key in options) {
+      if (key in options || key.startsWith('on')) {
         props[key] = propsData[key]
       } else {
         attrs[key] = propsData[key]
+      }
+    }
+    // 使用默认值
+    for (const key in options) {
+      if (!(key in propsData)) {
+        // 在组件里定义了但是父组件没有传入(在组件身上为props赋值)
+        props[key] = options[key].default
       }
     }
     return [props, attrs]
@@ -607,11 +681,34 @@ function createRenderer(options) {
     }
     return false
   }
+
+  function h(type, key, props = null, children = null) {
+    const res = {}
+    res['type'] = type
+    res['key'] = key
+    if (arguments.length === 3) {
+      // 说明最后一个参数可能是prop或者children
+      if (typeof props === 'object' && !Array.isArray(props)) {
+        // 是对象而且不是数组,说明是props
+        res['props'] = props
+      } else if (typeof props === 'string' || Array.isArray(props)) {
+        // 说明第二个参数是子节点
+        res['children'] = props
+      }
+    } else if (arguments.length === 4) {
+      res['props'] = props
+      res['children'] = children
+    }
+    return {
+      ...res /* 如果有props和children就会覆盖掉默认的null */,
+    }
+  }
   return {
     render,
+    h,
   }
 }
-const { render } = createRenderer({
+const { render, h } = createRenderer({
   createElement: (tag) => {
     return document.createElement(tag)
   },
@@ -841,7 +938,7 @@ function getSequence(arr) {
 function useQueueJob() {
   const queue = new Set()
   const p = Promise.resolve()
-  const isFlash = false
+  let isFlash = false
   function queueJob(
     job /* 传来要添加到微队列里的函数,这里是在data数据发生改变后将要执行的副作用函数 */
   ) {

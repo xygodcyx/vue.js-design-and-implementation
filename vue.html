@@ -9,46 +9,35 @@
     <script src="https://unpkg.com/vue@3"></script>
   </head>
   <body>
-    <div id="app">
-      {{ message }}
-      <button
-        @click="reverseMessage"
-        ref="btnDom"
-        :style="{
-        color: '#987212',
-        fontSize: '20px',
-        backgroundColor: '#123456',
-        borderRadius: '5px',
-      }">
-        Reverse Message
-      </button>
-      <div :class="{foo:true}"></div>
-    </div>
+    <div id="app"></div>
     <script>
+      const { h, ref, computed, watch } = Vue
       const app = Vue.createApp({
         setup() {
-          const message = Vue.ref('Hello Vue!')
-          const btnDom = Vue.ref(null)
-          const reverseMessage = (e) => {
-            console.log(e)
-            message.value = message.value.split('').reverse().join('')
-          }
-          Vue.onMounted(() => {
-            btnDom.value.addEventListener('click', () => {})
+          const a = ref(1)
+          const b = ref(2)
+          const sum = computed(() => a.value + b.value)
+          watch(sum, (newValue, oldValue) => {
+            console.log(newValue, oldValue)
           })
-          const obj = Vue.reactive({ a: 1 })
-          Vue.watch(
-            () => obj.a,
-            (newValue, oldValue) => {
-              console.log(newValue, oldValue)
-            }
-          )
-          obj.a = 2
           return {
-            message,
-            btnDom,
-            reverseMessage,
+            sum,
+            a,
+            b,
           }
+        },
+        render() {
+          return h('div', null, [
+            h('span', null, `a:${this.a}`),
+            h('span', null, `sum:${this.sum}`),
+            h(
+              'button',
+              {
+                onClick: () => this.a++,
+              },
+              'a++'
+            ),
+          ])
         },
       })
       app.mount('#app')

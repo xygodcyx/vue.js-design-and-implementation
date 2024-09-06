@@ -234,7 +234,7 @@ function registerEffect(wantRegisterEffectFunction, options = {}) {
     // 执行副作用函数,执行副作用函数的目的是触发代理对象的get拦截,然后收集依赖
     // 至于为什么要拿到因为副作用用户传来的函数的返回值,是因为这个函数可能是一个getters函数，需要执行才能拿到值,我们可以在computed和watch中使用
     const res = wantRegisterEffectFunction()
-    /* 
+    /*
          为什么要用一个副作用栈临时储存副作用函数呢?因为要注册副作用函数(registerEffect)可能会发生嵌套,如果发生嵌套而且没有
          副作用栈的话,只有一个activeEffect,这时候执行内层副作用函数的时候,外层的副作用函数会被内层的副作用函数覆盖(activeEffect被覆盖),
          而且在内层执行完毕的时候activeEffect再次运行外层副作用函数时activeEffect也不会指向外层函数,这就导致了外层函数没有被正确的收集,导致了错误

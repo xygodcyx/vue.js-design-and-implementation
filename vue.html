@@ -9,11 +9,45 @@
     <script src="https://unpkg.com/vue@3"></script>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div style="position: fixed">
+        <mouse-position
+          v-slot="{
+      position:{x,y}
+    }"
+          >{{x}},{{y}}</mouse-position
+        >
+      </div>
+      <div style="height: 10000vh"></div>
+    </div>
     <script>
-      const { h, ref, computed, watch } = Vue
+      const { h, ref, computed, watch, onMounted, onUnmounted } = Vue
+
+      const mousePosition = {
+        template: `
+          <slot :position="position"></slot>
+        `,
+        setup(props, { slots }) {
+          const position = ref({ x: 0, y: 0 })
+          function onMouseMoveHandle({ pageX, pageY }) {
+            position.value.x = pageX
+            position.value.y = pageY - window.scrollY.toFixed(0)
+          }
+          onMounted(() => {
+            document.addEventListener('mousemove', onMouseMoveHandle)
+          })
+          onUnmounted(() => {
+            document.removeEventListener('mousemove', onMouseMoveHandle)
+          })
+          return {
+            position,
+          }
+        },
+      }
+
       const app = Vue.createApp({
-        setup() {
+        components: { mousePosition },
+        setup(p, { slots }) {
           const a = ref(1)
           const b = ref(2)
           const sum = computed(() => a.value + b.value)
@@ -25,19 +59,6 @@
             a,
             b,
           }
-        },
-        render() {
-          return h('div', null, [
-            h('span', null, `a:${this.a}`),
-            h('span', null, `sum:${this.sum}`),
-            h(
-              'button',
-              {
-                onClick: () => this.a++,
-              },
-              'a++'
-            ),
-          ])
         },
       })
       app.mount('#app')

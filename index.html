@@ -113,6 +113,7 @@
       },
       mounted() {
         // this.autoRun()
+        console.log(this)
       },
       methods: {
         autoRun() {
@@ -171,7 +172,9 @@
       props: {
         title: 'xygod',
         other: 'other',
-        onUpdateText(data) {},
+        onUpdateText(data) {
+          console.log('onUpdateText', data)
+        },
       },
       children: {
         // 插槽
@@ -230,13 +233,20 @@
     const myComponentSetup = {
       name: 'componentSetUp',
       props: {
-        title: String,
+        title: {
+          type: String,
+          default: '默认',
+        },
       },
-      setup(props, { emit, attrs }) {
+      setup(props, { emit, attrs, slots }) {
         const a = ref(1)
         const b = ref(2)
         const sum = computed(() => a.value + b.value)
         const obj = reactive({ a: 1, b: 2 })
+        onMounted(() => {
+          console.log(a.value)
+          console.log(b.value)
+        })
         watch(sum, (n, o) =>
           emit('sumUpdate', sum.value, 'update')
         ) /* 可以正常使用watch结合computed */
@@ -268,6 +278,9 @@
                 },
                 `hello,my name is ${props.title},sum:${sum.value},attrs:${attrs.other}`
               ),
+              slots.header(props.title),
+              slots.main(),
+              slots.footer(),
             ],
           }
         }
@@ -284,9 +297,51 @@
       },
       children: {
         // 插槽,组件的子节点就是插槽
+        header(title) {
+          return h('div', 1, null, `header ${title}`)
+        },
+        main() {
+          return h('div', 2, null, [h('span', 4, null, 'main')])
+        },
+        footer() {
+          return h('div', 3, null, 'footer')
+        },
+        default() {
+          return h('div', 5, null, 'default')
+        },
       },
     }
-    render(componentVNodeSetup, document.querySelector('#app'))
+    const componentVNodeSetupAsync = {
+      type: defineAsyncComponent({
+        loader: () =>
+          new Promise((resolve) => {
+            const component = {
+              render() {
+                console.log('准备渲染用户组件')
+                return h('div', 1, null, '这是延迟加载出来的组件')
+              },
+            }
+            setTimeout(() => {
+              resolve(component)
+            }, 300)
+          }),
+        // timeout: 100,
+        errorComponent: {
+          render() {
+            console.log('准备渲染错误组件')
+            return h('div', 2, null, '出错了')
+          },
+        },
+        placeholderComponent: {
+          render() {
+            console.log('准备渲染占位符组件')
+            return h('div', 3, null, '占位符')
+          },
+        },
+      }),
+    }
+    // render(componentVNodeSetup, document.querySelector('#app'))
+    render(componentVNodeSetupAsync, document.querySelector('#app'))
     // render(componentVNode1, document.querySelector('#app'))
     // render(componentVNode2, document.querySelector('#app'))
   </script>

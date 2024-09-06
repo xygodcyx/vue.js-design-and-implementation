@@ -296,11 +296,17 @@ const minVue = (function (exports) {
   }
 
   function ref(val) {
+    return createRef(val)
+  }
+  function shallowRef(val) {
+    return createRef(val, true)
+  }
+  function createRef(val, isShallow = false) {
     const wrapper = {
       value: val,
     }
     Object.defineProperty(wrapper, '__v_isRef', { value: true })
-    return reactive(wrapper)
+    return isShallow ? shallowReactive(wrapper) : reactive(wrapper)
   }
 
   // 这个函数是快速从一个响应式对象上提取某个属性作为响应式对象使用
@@ -727,6 +733,7 @@ const minVue = (function (exports) {
   exports.readonly = readonly
   exports.shallowReadonly = shallowReadonly
   exports.ref = ref
+  exports.shallowRef = shallowRef
   exports.bucket = bucket
   return exports
 })({})

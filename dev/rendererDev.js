@@ -1,7 +1,7 @@
 const Text = Symbol() // 描述文本节点
 const Comment = Symbol() // 描述注释节点
 const Fragment = Symbol() // 描述片段节点
-const { effect, reactive, computed, shallowReactive, shallowReadonly, ref } =
+const { effect, reactive, computed, shallowReactive, shallowReadonly, ref, shallowRef } =
   typeof VueReactivity === 'undefined' ? minVue : VueReactivity
 const { watch } = minVue
 function createRenderer(options) {
@@ -38,6 +38,7 @@ function createRenderer(options) {
   function patch(n1, n2, container, anchor = null) {
     if (n1 && n2 && n1.type !== n2.type) {
       // 类型不同，需要卸载旧节点，然后挂载新节点
+      console.log(`发现类型不同,开始卸载组件 n1:${JSON.stringify({ who: n1.type })}`)
       unmount(n1)
       n1 = null
     }
@@ -452,8 +453,9 @@ function createRenderer(options) {
     }
     insert(container, el, anchor) // 挂载节点到父容器(真实dom) (会等到所有子节点都insert完毕了才会insert自己)
   }
+  let currentInstance = null
   function mountComponent(vnode, container, anchor) {
-    const componentOptions = vnode.type
+    const componentOptions = vnode.type /* 一个虚拟dom描述的组件类型 */
     let {
       render,
       data,
@@ -473,18 +475,12 @@ function createRenderer(options) {
     beforeCreate && beforeCreate()
     const state = data ? reactive(data()) : null
     /* vnode.props是虚拟节点上的props,是传递给组件的props值(实际的值,给你title,给你name) */
+    /* propsOptions是在组件(一个配置对象)上定义的props,期望使用这个组件时传入的props */
     const [props, attrs] = resolveProps(propsOptions, vnode.props)
-    const instance = {
-      state,
-      props: shallowReactive(props),
-      attrs /* 不是响应式的 */,
-      isMounted: false,
-      methods,
-      computed: computedOptions,
-      subTree: null,
-    }
+
     function emit(event, ...payload) {
       const eventName = `on${event[0].toUpperCase()}${event.slice(1)}`
+      /* 在组件实例上找到这个函数,然后调用,并把参数传给它,这个组件实例是一个组件的整体实例,即虚拟dom上的实例*/
       const handle = instance.props[eventName]
       if (handle) {
         handle(...payload)
@@ -493,8 +489,23 @@ function createRenderer(options) {
       }
     }
     // setup语法实现
-    const setupContext = { attrs, emit }
+    const slots = vnode.children || {}
+    const setupContext = { attrs, emit, slots }
+    const instance = {
+      state,
+      props: shallowReactive(props),
+      attrs /* 不是响应式的 */,
+      isMounted: false,
+      methods,
+      watch: watchOptions,
+      computed: computedOptions,
+      subTree: null,
+      slots,
+      mounteds: [],
+    }
+    setCurrentInstance(instance)
     const setupResult = (setup && setup(shallowReadonly(instance.props), setupContext)) || null
+    setCurrentInstance(null) //在执行完setup函数后清除这个变量,目的是为了不在setup以外的地方调用onXXX生命周期函数
     let setupState = null
     if (typeof setupResult === 'function') {
       // setup返回了一个渲染函数(约定)
@@ -510,7 +521,7 @@ function createRenderer(options) {
       setupState = setupResult
     } else {
       if (!render) {
-        console.error('setup函数不存在而且没有指定render函数')
+        console.error('setup函数不存在而且没有指定render函数,请指定render函数')
       }
     }
 
@@ -521,7 +532,7 @@ function createRenderer(options) {
     */
     const renderContext = new Proxy(instance, {
       get(t, k, r) {
-        const { state, props, methods, computed } = t
+        const { state, props, methods, computed, slots } = t
         if (state && k in state) {
           return state[k]
         } else if (k in props) {
@@ -538,6 +549,8 @@ function createRenderer(options) {
           return computed
         } else if (k === '$emit') {
           return emit
+        } else if (k === '$slots') {
+          return slots
         } else {
           console.error(`读取失败,${k}不在vnode上`)
         }
@@ -570,10 +583,12 @@ function createRenderer(options) {
         const subTree = render.call(renderContext, renderContext)
         if (!instance.isMounted) {
           beforeMount && beforeMount.call(renderContext)
+          console.log('挂载')
           patch(null, subTree, container, anchor) /* 挂载组件上的vnode */
           instance.isMounted = true
-          mounted && mounted.call(renderContext)
+          instance.mounteds.forEach((mounted) => mounted && mounted.call(renderContext))
         } else {
+          console.log('更新')
           beforeUpdate && beforeUpdate.call(renderContext)
           patch(instance.subTree, subTree, container, anchor) /* 更新组件上的vnode */
           updated && updated.call(renderContext)
@@ -584,6 +599,97 @@ function createRenderer(options) {
         scheduler: useQueueJob(),
       }
     )
+  }
+  function defineAsyncComponent(options) {
+    if (typeof options === 'function') {
+      options = {
+        loader: options,
+      }
+    }
+    /* 这个loader函数会返回一个promise,用来动态加载组件 */
+    const { loader } = options
+
+    let innerCom = null
+    console.log(options)
+
+    /* 返回一个组件的配置对象 */
+    return {
+      name: 'AsyncComponent',
+      setup(props, { emit, attrs }) {
+        const isLoaded = ref(false)
+        const isLoading = ref(false)
+        const isTimerout = ref(false)
+        const error = shallowRef(null)
+        let loadingTimer = null
+        let timeoutTimer = null
+        // 延迟一会加载组件,避免加载太快导致页面闪烁(比如200ms后显示加载页面)
+        if (options.delay) {
+          loadingTimer = setTimeout(() => {
+            isLoading.value = true
+          }, options.delay)
+        } else {
+          isLoading.value = true
+        }
+        // 超时检查
+        if (options.timeout) {
+          timeoutTimer = setTimeout(() => {
+            isTimerout.value = true
+            isLoaded.value = false
+            const err = new Error('加载组件超时了')
+            error.value = err
+          }, options.timeout)
+        }
+        loader()
+          .then((com) => {
+            innerCom = com
+            if (!isTimerout.value && !error.value) {
+              isLoaded.value = true
+            }
+          })
+          .catch((err) => {
+            error.value = err
+          })
+          .finally(() => {
+            // 成功和出错都会进入finally
+            isLoading.value = false
+            clearTimeout(loadingTimer)
+            clearTimeout(timeoutTimer)
+          })
+        const placeholder = options.placeholderComponent
+          ? { type: options.placeholderComponent }
+          : {
+              type: Text,
+              children: '',
+            }
+        return () => {
+          // 要渲染的东西,如果加载成功了就渲染加载后的组件,没有的话就渲染占位符
+          // 因为isLoaded是响应式的,所以这些代码会在isLoaded被改变后重新执行,也就是会重新渲染
+          if (isLoaded.value) {
+            return { type: innerCom }
+          } else if (isTimerout.value) {
+            console.log('渲染错误组件')
+            // 如果超时了,那就要渲染错误组件,否则就只渲染占位符
+            console.log(options.errorComponent)
+            return options.errorComponent ? { type: options.errorComponent } : placeholder
+          }
+          // 即没加载出来也没有超时,那就先渲染占位符
+          return placeholder
+        }
+      },
+    }
+  }
+  function onMounted(fn) {
+    if (currentInstance) {
+      console.log(currentInstance)
+      currentInstance.mounteds.push(fn)
+    } else {
+      // 不存在,给一个警告
+      console.warn('onMounted函数只能在setup中调用')
+    }
+  }
+  function onUnmounted() {}
+  function setCurrentInstance(instance) {
+    currentInstance = instance
   }
   function resolveComputed(computeds, ctx) {
     const res = {}
@@ -607,6 +713,8 @@ function createRenderer(options) {
   function resolveWatchGetter(key, ctx) {
     let res
     if (key in ctx['computed']) {
+      /* 如果返回的是一个函数,并且返回值是一个对象,那改变对象里的值时不会触发
+      watch,要实现深监听(传入函数时,传入对象时不需要,因为默认就是深监听) */
       res = () => ctx[key].value
     } else {
       res = () => ctx[key]
@@ -706,9 +814,12 @@ function createRenderer(options) {
   return {
     render,
     h,
+    onMounted,
+    onUnmounted,
+    defineAsyncComponent,
   }
 }
-const { render, h } = createRenderer({
+const { render, h, onMounted, onUnmounted, defineAsyncComponent } = createRenderer({
   createElement: (tag) => {
     return document.createElement(tag)
   },
@@ -733,17 +844,30 @@ const { render, h } = createRenderer({
   unmount(vnode) {
     _unmount(vnode)
     function _unmount(vnode) {
+      console.log('开始卸载组件')
       if (vnode.type === Fragment) {
         // fragment需要逐个卸载子节点
+        console.log('卸载Fragment的子节点')
         vnode.children.forEach((c) => _unmount(c))
         return
       }
       if (Array.isArray(vnode.children)) {
+        console.log('卸载很多个子节点')
         vnode.children.forEach((c) => _unmount(c))
       }
-      const parent = vnode.el.parentNode
-      if (parent) {
-        parent.removeChild(vnode.el)
+      if (typeof vnode.type === 'object') {
+        // 是组件,然后卸载
+        console.log('卸载组件节点')
+        _unmount(vnode.component.subTree)
+      }
+      console.log(vnode.el)
+      console.log(JSON.parse(JSON.stringify(vnode)))
+      // 解决组件卸载会递归2次的问题
+      if (vnode.el) {
+        const parent = vnode.el.parentNode
+        if (parent) {
+          parent.removeChild(vnode.el)
+        }
       }
     }
   },

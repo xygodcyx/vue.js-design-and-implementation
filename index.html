@@ -185,7 +185,7 @@
       name: 'component',
       data() {
         return {
-          text: text.value,
+          text: 'text',
           a: 1,
           b: 2,
         }
@@ -243,10 +243,7 @@
         const b = ref(2)
         const sum = computed(() => a.value + b.value)
         const obj = reactive({ a: 1, b: 2 })
-        onMounted(() => {
-          console.log(a.value)
-          console.log(b.value)
-        })
+        onMounted(() => {})
         watch(sum, (n, o) =>
           emit('sumUpdate', sum.value, 'update')
         ) /* 可以正常使用watch结合computed */
@@ -311,21 +308,35 @@
         },
       },
     }
+    const component = {
+      render() {
+        console.log('准备渲染用户组件')
+        return h('div', 1, null, '这是延迟加载出来的组件')
+      },
+    }
     const componentVNodeSetupAsync = {
       type: defineAsyncComponent({
-        loader: () =>
-          new Promise((resolve) => {
-            const component = {
-              render() {
-                console.log('准备渲染用户组件')
-                return h('div', 1, null, '这是延迟加载出来的组件')
-              },
+        loader: () => {
+          return new Promise((resolve, reject) => {
+            if (Math.random() > 0) {
+              setTimeout(() => {
+                resolve(component)
+              }, 300)
+            } else {
+              reject('随机出错')
             }
-            setTimeout(() => {
-              resolve(component)
-            }, 300)
-          }),
+          })
+        },
         // timeout: 100,
+        onError(retry, fail, retries, reason) {
+          console.log('retries', retries)
+          if (retries > 3) {
+            fail()
+            console.warn(reason)
+          } else {
+            retry()
+          }
+        },
         errorComponent: {
           render() {
             console.log('准备渲染错误组件')
@@ -340,8 +351,18 @@
         },
       }),
     }
-    // render(componentVNodeSetup, document.querySelector('#app'))
-    render(componentVNodeSetupAsync, document.querySelector('#app'))
+    function myFunComponent() {
+      return {
+        type: 'h1',
+        children: '函数组件',
+      }
+    }
+    const componentVNodeFunction = {
+      type: myFunComponent,
+    }
+    render(componentVNodeSetup, document.querySelector('#app'))
+    // render(componentVNodeSetupAsync, document.querySelector('#app'))
+    // render(componentVNodeFunction, document.querySelector('#app'))
     // render(componentVNode1, document.querySelector('#app'))
     // render(componentVNode2, document.querySelector('#app'))
   </script>

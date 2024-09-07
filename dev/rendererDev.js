@@ -9,12 +9,40 @@ function createRenderer(options) {
     createElement,
     setElementText,
     insert,
-    unmount,
+    removeDom,
     patchProps,
     createText,
     createComment,
     setText,
   } = options
+
+  function unmount(vnode) {
+    console.log('开始卸载组件')
+    if (vnode.type === Fragment) {
+      // fragment需要逐个卸载子节点
+      console.log('卸载Fragment的子节点')
+      vnode.children.forEach((c) => unmount(c))
+      return
+    }
+    if (Array.isArray(vnode.children)) {
+      console.log('卸载很多个子节点')
+      vnode.children.forEach((c) => unmount(c))
+      return
+    }
+    if (typeof vnode.type === 'object' || vnode.component) {
+      // 是组件,然后卸载
+      console.log('卸载组件节点')
+      unmount(vnode.component.subTree)
+      return /*  要return,不然会多执行一次unmount,导致多执行的那次找不到parentNode*/
+    }
+    console.log('正在卸载这个虚拟dom节点', JSON.parse(JSON.stringify(vnode)))
+    console.log('要移除的dom元素', vnode.el)
+    // 解决组件卸载会递归2次的问题
+    const parent = vnode.el.parentNode
+    if (parent) {
+      removeDom(parent, vnode.el)
+    }
+  }
 
   function render(vnode, container) {
     if (vnode) {
@@ -51,20 +79,36 @@ function createRenderer(options) {
       // 普通html元素
       if (!n1) {
         // 旧的节点不存在，需要挂载新节点
+        console.log('挂载虚拟dom元素(原生html元素)', JSON.parse(JSON.stringify(n2)))
         mountElement(n2, container, anchor)
       } else {
         // 打补丁(更新)
         /* 因为是html节点,所以有属性,所以需要更新props,而别的节点不需要更新props(除了组件) */
+        console.log(
+          '更新虚拟dom元素(原生html元素)',
+          'n1:',
+          JSON.parse(JSON.stringify(n1)),
+          'n2:',
+          JSON.parse(JSON.stringify(n2))
+        )
         patchElement(n1, n2)
       }
     } else if (type === Text) {
       // 文本节点
       if (!n1) {
         // 如果n1不存在,则需要创建文本节点
+        console.log('挂载虚拟dom元素(文本节点)', JSON.parse(JSON.stringify(n2)))
         const el = (n2.el = createText(n2.children))
         insert(container, el)
       } else {
         // 如果n1存在,并且n1和n2的children /* 实际内容 */ 不同,则需要更新文本节点
+        console.log(
+          '更新虚拟dom元素(文本节点)',
+          'n1:',
+          JSON.parse(JSON.stringify(n1)),
+          'n2:',
+          JSON.parse(JSON.stringify(n2))
+        )
         const el = (n2.el = n1.el)
         if (n1.children !== n2.children) {
           setText(el, n2.children)
@@ -73,9 +117,17 @@ function createRenderer(options) {
     } else if (type === Comment) {
       // 注释节点
       if (!n1) {
+        console.log('挂载虚拟dom元素(注释节点)', JSON.parse(JSON.stringify(n2)))
         const el = (n2.el = createComment(n2.children))
         insert(container, el)
       } else {
+        console.log(
+          '更新虚拟dom元素(注释节点)',
+          'n1:',
+          JSON.parse(JSON.stringify(n1)),
+          'n2:',
+          JSON.parse(JSON.stringify(n2))
+        )
         // 如果n1存在,并且n1和n2的children不同,则需要更新注释节点
         const el = (n2.el = n1.el)
         if (n1.children !== n2.children) {
@@ -85,17 +137,34 @@ function createRenderer(options) {
     } else if (type === Fragment) {
       // fragment节点
       if (!n1) {
+        console.log('挂载虚拟dom元素(Fragment节点)', JSON.parse(JSON.stringify(n2)))
         // 如果n1不存在,逐个挂载子节点即可,因为是fragment节点,不需要挂载父节点
         n2.children.forEach((c) => patch(null, c, container))
       } else {
+        console.log(
+          '更新虚拟dom元素(Fragment节点)',
+          'n1:',
+          JSON.parse(JSON.stringify(n1)),
+          'n2:',
+          JSON.parse(JSON.stringify(n2))
+        )
         // 如果n1存在,那么只需要更新fragment节点的children即可(因为fragment节点没有真实节点也就没有各种dom属性)
         /* 走patchChildren不会错,因为patchelement里最终会执行patch(对children进行patch) */
         patchChildren(n1, n2, container)
       }
-    } else if (typeof type === 'object') {
+    } else if (typeof type === 'object' || typeof type === 'function') {
+      // 组件,可以使有状态的普通组件,也可以是无状态的函数组件(没有data和生命周期的组件)
       if (!n1) {
+        console.log('挂载虚拟dom元素(组件)', JSON.parse(JSON.stringify(n2)))
         mountComponent(n2, container, anchor)
       } else {
+        console.log(
+          '更新虚拟dom元素(组件)',
+          'n1:',
+          JSON.parse(JSON.stringify(n1)),
+          'n2:',
+          JSON.parse(JSON.stringify(n2))
+        )
         patchComponent(n1, n2, container, anchor)
       }
       // 组件
@@ -455,7 +524,14 @@ function createRenderer(options) {
   }
   let currentInstance = null
   function mountComponent(vnode, container, anchor) {
-    const componentOptions = vnode.type /* 一个虚拟dom描述的组件类型 */
+    const isFunction = typeof vnode.type === 'function'
+    let componentOptions = vnode.type /* 一个虚拟dom描述的组件类型 */
+    if (isFunction) {
+      componentOptions = {
+        render: vnode.type /* type是一个函数组件,这个函数会返回要渲染的虚拟dom */,
+        props: vnode.type.props,
+      }
+    }
     let {
       render,
       data,
@@ -577,18 +653,26 @@ function createRenderer(options) {
     instance.watch = resolveWatch(watchOptions, renderContext)
 
     created && created.call(renderContext)
-    /* 会返回一个vnode节点,然后就以vnode的处理方式进行patch挂载,子节点会自动的递归处理 */
+    /* 只有在effect函数里调用响应式数据时才会被track依赖,因为我们在effect里对activeEffect进行了赋值
+       如果在effect之外使用了响应式数据,那依然不会被track依赖,因为在track中首先就判断activeEffect是否存在,而在
+       别处使用响应式数据时并不会初始化activeEffect,所以依赖就不会被收集,这也是为什么必须要在setup函数中暴露想要
+       收集依赖的响应式数据的原因,而未被暴露的响应式数据可能会在别的地方用到,但只会被使用一次,其所处的函数也不会被收集为依赖
+       比如生命周期函数,在生命周期函数中使用的响应式数据和普通对象无异,不具有响应式的特性,即:数据改变后不会触发生命周期函数重新执行.
+
+      */
     effect(
       () => {
+        /* 会返回一个vnode节点,然后就以vnode的处理方式进行patch挂载,子节点会自动的递归处理 */
         const subTree = render.call(renderContext, renderContext)
         if (!instance.isMounted) {
           beforeMount && beforeMount.call(renderContext)
-          console.log('挂载')
+          console.log('初始化组件')
           patch(null, subTree, container, anchor) /* 挂载组件上的vnode */
           instance.isMounted = true
+          mounted && instance.mounteds.push(mounted)
           instance.mounteds.forEach((mounted) => mounted && mounted.call(renderContext))
         } else {
-          console.log('更新')
+          console.log('更新组件')
           beforeUpdate && beforeUpdate.call(renderContext)
           patch(instance.subTree, subTree, container, anchor) /* 更新组件上的vnode */
           updated && updated.call(renderContext)
@@ -607,10 +691,9 @@ function createRenderer(options) {
       }
     }
     /* 这个loader函数会返回一个promise,用来动态加载组件 */
-    const { loader } = options
+    const { loader, onError } = options
 
     let innerCom = null
-    console.log(options)
 
     /* 返回一个组件的配置对象 */
     return {
@@ -618,7 +701,6 @@ function createRenderer(options) {
       setup(props, { emit, attrs }) {
         const isLoaded = ref(false)
         const isLoading = ref(false)
-        const isTimerout = ref(false)
         const error = shallowRef(null)
         let loadingTimer = null
         let timeoutTimer = null
@@ -630,21 +712,32 @@ function createRenderer(options) {
         } else {
           isLoading.value = true
         }
-        // 超时检查
-        if (options.timeout) {
-          timeoutTimer = setTimeout(() => {
-            isTimerout.value = true
-            isLoaded.value = false
-            const err = new Error('加载组件超时了')
-            error.value = err
-          }, options.timeout)
+        let retries = 1
+        function load() {
+          return loader().catch((err) => {
+            if (onError) {
+              // 重新加载组件
+              error.value = err
+              return new Promise((resolve, reject) => {
+                const retry = () => {
+                  retries++
+                  resolve(load())
+                }
+                const fail = () => {
+                  reject(err)
+                }
+                onError(retry, fail, retries, error.value)
+              })
+            } else {
+              throw err
+            }
+          })
         }
-        loader()
+
+        load()
           .then((com) => {
             innerCom = com
-            if (!isTimerout.value && !error.value) {
-              isLoaded.value = true
-            }
+            isLoaded.value = true
           })
           .catch((err) => {
             error.value = err
@@ -655,6 +748,14 @@ function createRenderer(options) {
             clearTimeout(loadingTimer)
             clearTimeout(timeoutTimer)
           })
+        // 超时检查
+        if (options.timeout) {
+          timeoutTimer = setTimeout(() => {
+            isLoaded.value = false
+            const err = new Error('加载组件超时了')
+            error.value = err
+          }, options.timeout)
+        }
         const placeholder = options.placeholderComponent
           ? { type: options.placeholderComponent }
           : {
@@ -666,7 +767,7 @@ function createRenderer(options) {
           // 因为isLoaded是响应式的,所以这些代码会在isLoaded被改变后重新执行,也就是会重新渲染
           if (isLoaded.value) {
             return { type: innerCom }
-          } else if (isTimerout.value) {
+          } else if (error.value) {
             console.log('渲染错误组件')
             // 如果超时了,那就要渲染错误组件,否则就只渲染占位符
             console.log(options.errorComponent)
@@ -680,7 +781,7 @@ function createRenderer(options) {
   }
   function onMounted(fn) {
     if (currentInstance) {
-      console.log(currentInstance)
+      console.log('当前挂载的组件实例', currentInstance)
       currentInstance.mounteds.push(fn)
     } else {
       // 不存在,给一个警告
@@ -841,35 +942,8 @@ const { render, h, onMounted, onUnmounted, defineAsyncComponent } = createRender
     // 如果引用节点(anchor)为 null，则将指定的节点添加到指定父节点(parent)的子节点列表的末尾。
     parent.insertBefore(el, anchor)
   },
-  unmount(vnode) {
-    _unmount(vnode)
-    function _unmount(vnode) {
-      console.log('开始卸载组件')
-      if (vnode.type === Fragment) {
-        // fragment需要逐个卸载子节点
-        console.log('卸载Fragment的子节点')
-        vnode.children.forEach((c) => _unmount(c))
-        return
-      }
-      if (Array.isArray(vnode.children)) {
-        console.log('卸载很多个子节点')
-        vnode.children.forEach((c) => _unmount(c))
-      }
-      if (typeof vnode.type === 'object') {
-        // 是组件,然后卸载
-        console.log('卸载组件节点')
-        _unmount(vnode.component.subTree)
-      }
-      console.log(vnode.el)
-      console.log(JSON.parse(JSON.stringify(vnode)))
-      // 解决组件卸载会递归2次的问题
-      if (vnode.el) {
-        const parent = vnode.el.parentNode
-        if (parent) {
-          parent.removeChild(vnode.el)
-        }
-      }
-    }
+  removeDom(parent, el) {
+    parent.removeChild(el)
   },
   patchProps(el, key, prevValue, nextValue) {
     // 有些属性在某些元素上是只读的

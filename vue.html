@@ -10,15 +10,9 @@
   </head>
   <body>
     <div id="app">
-      <div style="position: fixed">
-        <mouse-position
-          v-slot="{
-      position:{x,y}
-    }"
-          >{{x}},{{y}}</mouse-position
-        >
+      <div>
+        <my-component></my-component>
       </div>
-      <div style="height: 10000vh"></div>
     </div>
     <script>
       const { h, ref, computed, watch, onMounted, onUnmounted } = Vue
@@ -44,23 +38,20 @@
           }
         },
       }
+      const myComponent = {
+        template: `<div>{{sum}}</div>`,
+
+        computed: {
+          sum() {
+            return 2
+          },
+        },
+      }
 
       const app = Vue.createApp({
-        components: { mousePosition },
-        setup(p, { slots }) {
-          const a = ref(1)
-          const b = ref(2)
-          const sum = computed(() => a.value + b.value)
-          watch(sum, (newValue, oldValue) => {
-            console.log(newValue, oldValue)
-          })
-          return {
-            sum,
-            a,
-            b,
-          }
-        },
+        components: { myComponent },
       })
+
       app.mount('#app')
     </script>
   </body>

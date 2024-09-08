@@ -16,6 +16,7 @@
 
   <!-- <script src="https://unpkg.com/@vue/reactivity@3.0.5/dist/reactivity.global.js"></script> -->
   <!-- <script src="https://unpkg.com/vue@3"></script> -->
+  <script src="lodash.js"></script>
   <script src="./reactivity/reactive.js"></script>
   <script src="dev/rendererDev.js"></script>
 
@@ -242,6 +243,10 @@
         const a = ref(1)
         const b = ref(2)
         const sum = computed(() => a.value + b.value)
+        const test = computed(() => {
+          console.log('a', a.value)
+          console.log('b', b.value)
+        })
         const obj = reactive({ a: 1, b: 2 })
         onMounted(() => {})
         watch(sum, (n, o) =>
@@ -360,7 +365,128 @@
     const componentVNodeFunction = {
       type: myFunComponent,
     }
-    render(componentVNodeSetup, document.querySelector('#app'))
+
+    const TabOption = {
+      name: 'Tab',
+      props: {
+        title: {
+          type: Number,
+        },
+      },
+      setup(props) {
+        const number = ref(0)
+        return () => {
+          return h('div', 1, null, [
+            h(
+              'button',
+              2,
+              {
+                onClick() {
+                  number.value++
+                },
+              },
+              '+1'
+            ),
+            h('div', 3, null, `当前标签页:${props.title}`),
+            h('div', 3, null, `当前数字:${number.value}`),
+          ])
+        }
+      },
+    }
+    const myComponentKeepAlive = {
+      setup() {
+        const currentTab = ref(0)
+        const Tab1 = {
+          type: _.cloneDeep(TabOption),
+          props: {
+            title: '1',
+          },
+        }
+        const Tab2 = {
+          type: _.cloneDeep(TabOption),
+          props: {
+            title: '2',
+          },
+        }
+        const Tab3 = {
+          type: _.cloneDeep(TabOption),
+          props: {
+            title: '3',
+          },
+        }
+        return () => {
+          let renderComponent = null
+          if (currentTab.value === 0) {
+            renderComponent = Tab1
+          } else if (currentTab.value === 1) {
+            renderComponent = Tab2
+          } else if (currentTab.value === 2) {
+            renderComponent = Tab3
+          }
+          return h('div', 1, null, [
+            h(
+              'button',
+              2,
+              {
+                onClick() {
+                  currentTab.value = 0
+                },
+              },
+              '标签一'
+            ),
+            h(
+              'button',
+              3,
+              {
+                onClick() {
+                  currentTab.value = 1
+                },
+              },
+              '标签二'
+            ),
+            h(
+              'button',
+              4,
+              {
+                onClick() {
+                  currentTab.value = 2
+                },
+              },
+              '标签三'
+            ),
+            {
+              type: KeepAlive,
+              key: 99,
+              props: {},
+              children: {
+                default() {
+                  let renderComponent = null
+                  if (currentTab.value === 0) {
+                    renderComponent = Tab1
+                  } else if (currentTab.value === 1) {
+                    renderComponent = Tab2
+                  } else if (currentTab.value === 2) {
+                    renderComponent = Tab3
+                  }
+                  return renderComponent
+                },
+              },
+            },
+            // {
+            //   type: 'div',
+            //   key: 99,
+            //   props: {},
+            //   children: [renderComponent],
+            // },
+          ])
+        }
+      },
+    }
+    const componentVNodeKeepAlive = {
+      type: myComponentKeepAlive,
+    }
+    // render(componentVNodeSetup, document.querySelector('#app'))
+    render(componentVNodeKeepAlive, document.querySelector('#app'))
     // render(componentVNodeSetupAsync, document.querySelector('#app'))
     // render(componentVNodeFunction, document.querySelector('#app'))
     // render(componentVNode1, document.querySelector('#app'))

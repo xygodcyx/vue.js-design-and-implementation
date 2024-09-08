@@ -17,25 +17,32 @@ function createRenderer(options) {
   } = options
 
   function unmount(vnode) {
-    console.log('开始卸载组件')
+    console.log('开始卸载组件', vnode)
     if (vnode.type === Fragment) {
       // fragment需要逐个卸载子节点
-      console.log('卸载Fragment的子节点')
+      console.log('卸载Fragment的子节点', vnode.children)
       vnode.children.forEach((c) => unmount(c))
       return
     }
     if (Array.isArray(vnode.children)) {
-      console.log('卸载很多个子节点')
+      console.log('卸载很多个子节点', vnode.children)
       vnode.children.forEach((c) => unmount(c))
       return
     }
     if (typeof vnode.type === 'object' || vnode.component) {
       // 是组件,然后卸载
-      console.log('卸载组件节点')
-      unmount(vnode.component.subTree)
+      console.log('卸载组件节点', vnode)
+      if (vnode.shouldKeepAlive) {
+        // 需要保持激活
+        console.log('已经被shouldKeepAlive,不需要卸载,将其设置为非激活即可')
+        vnode.keepAliveInstance._deActivate(vnode)
+      } else {
+        // 不需要保持激活
+        unmount(vnode.component.subTree)
+      }
       return /*  要return,不然会多执行一次unmount,导致多执行的那次找不到parentNode*/
     }
-    console.log('正在卸载这个虚拟dom节点', JSON.parse(JSON.stringify(vnode)))
+    console.log('正在卸载这个虚拟dom节点', vnode)
     console.log('要移除的dom元素', vnode.el)
     // 解决组件卸载会递归2次的问题
     const parent = vnode.el.parentNode
@@ -79,36 +86,24 @@ function createRenderer(options) {
       // 普通html元素
       if (!n1) {
         // 旧的节点不存在，需要挂载新节点
-        console.log('挂载虚拟dom元素(原生html元素)', JSON.parse(JSON.stringify(n2)))
+        console.log('挂载虚拟dom元素(原生html元素)', n2)
         mountElement(n2, container, anchor)
       } else {
         // 打补丁(更新)
         /* 因为是html节点,所以有属性,所以需要更新props,而别的节点不需要更新props(除了组件) */
-        console.log(
-          '更新虚拟dom元素(原生html元素)',
-          'n1:',
-          JSON.parse(JSON.stringify(n1)),
-          'n2:',
-          JSON.parse(JSON.stringify(n2))
-        )
+        console.log('更新虚拟dom元素(原生html元素)', 'n1:', n1, 'n2:', n2)
         patchElement(n1, n2)
       }
     } else if (type === Text) {
       // 文本节点
       if (!n1) {
         // 如果n1不存在,则需要创建文本节点
-        console.log('挂载虚拟dom元素(文本节点)', JSON.parse(JSON.stringify(n2)))
+        console.log('挂载虚拟dom元素(文本节点)', n2)
         const el = (n2.el = createText(n2.children))
         insert(container, el)
       } else {
         // 如果n1存在,并且n1和n2的children /* 实际内容 */ 不同,则需要更新文本节点
-        console.log(
-          '更新虚拟dom元素(文本节点)',
-          'n1:',
-          JSON.parse(JSON.stringify(n1)),
-          'n2:',
-          JSON.parse(JSON.stringify(n2))
-        )
+        console.log('更新虚拟dom元素(文本节点)', 'n1:', n1, 'n2:', n2)
         const el = (n2.el = n1.el)
         if (n1.children !== n2.children) {
           setText(el, n2.children)
@@ -117,17 +112,11 @@ function createRenderer(options) {
     } else if (type === Comment) {
       // 注释节点
       if (!n1) {
-        console.log('挂载虚拟dom元素(注释节点)', JSON.parse(JSON.stringify(n2)))
+        console.log('挂载虚拟dom元素(注释节点)', n2)
         const el = (n2.el = createComment(n2.children))
         insert(container, el)
       } else {
-        console.log(
-          '更新虚拟dom元素(注释节点)',
-          'n1:',
-          JSON.parse(JSON.stringify(n1)),
-          'n2:',
-          JSON.parse(JSON.stringify(n2))
-        )
+        console.log('更新虚拟dom元素(注释节点)', 'n1:', n1, 'n2:', n2)
         // 如果n1存在,并且n1和n2的children不同,则需要更新注释节点
         const el = (n2.el = n1.el)
         if (n1.children !== n2.children) {
@@ -137,17 +126,11 @@ function createRenderer(options) {
     } else if (type === Fragment) {
       // fragment节点
       if (!n1) {
-        console.log('挂载虚拟dom元素(Fragment节点)', JSON.parse(JSON.stringify(n2)))
+        console.log('挂载虚拟dom元素(Fragment节点)', n2)
         // 如果n1不存在,逐个挂载子节点即可,因为是fragment节点,不需要挂载父节点
         n2.children.forEach((c) => patch(null, c, container))
       } else {
-        console.log(
-          '更新虚拟dom元素(Fragment节点)',
-          'n1:',
-          JSON.parse(JSON.stringify(n1)),
-          'n2:',
-          JSON.parse(JSON.stringify(n2))
-        )
+        console.log('更新虚拟dom元素(Fragment节点)', 'n1:', n1, 'n2:', n2)
         // 如果n1存在,那么只需要更新fragment节点的children即可(因为fragment节点没有真实节点也就没有各种dom属性)
         /* 走patchChildren不会错,因为patchelement里最终会执行patch(对children进行patch) */
         patchChildren(n1, n2, container)
@@ -155,16 +138,15 @@ function createRenderer(options) {
     } else if (typeof type === 'object' || typeof type === 'function') {
       // 组件,可以使有状态的普通组件,也可以是无状态的函数组件(没有data和生命周期的组件)
       if (!n1) {
-        console.log('挂载虚拟dom元素(组件)', JSON.parse(JSON.stringify(n2)))
-        mountComponent(n2, container, anchor)
+        console.log('挂载虚拟dom元素(组件)', n2)
+        if (n2.keptAlive) {
+          console.log('已经被KeepAlive,不需要挂载,激活该组件即可')
+          n2.keepAliveInstance._activate(n2, container, anchor)
+        } else {
+          mountComponent(n2, container, anchor)
+        }
       } else {
-        console.log(
-          '更新虚拟dom元素(组件)',
-          'n1:',
-          JSON.parse(JSON.stringify(n1)),
-          'n2:',
-          JSON.parse(JSON.stringify(n2))
-        )
+        console.log('更新虚拟dom元素(组件)', 'n1:', n1, 'n2:', n2)
         patchComponent(n1, n2, container, anchor)
       }
       // 组件
@@ -528,8 +510,9 @@ function createRenderer(options) {
     let componentOptions = vnode.type /* 一个虚拟dom描述的组件类型 */
     if (isFunction) {
       componentOptions = {
-        render: vnode.type /* type是一个函数组件,这个函数会返回要渲染的虚拟dom */,
-        props: vnode.type.props,
+        render: vnode.type /* 函数组件的type是一个函数,这个函数会返回要渲染的虚拟dom */,
+        props:
+          vnode.type.props /* 可以在这个函数上添加props,render中的this执行和普通有状态组件无异 */,
       }
     }
     let {
@@ -553,7 +536,6 @@ function createRenderer(options) {
     /* vnode.props是虚拟节点上的props,是传递给组件的props值(实际的值,给你title,给你name) */
     /* propsOptions是在组件(一个配置对象)上定义的props,期望使用这个组件时传入的props */
     const [props, attrs] = resolveProps(propsOptions, vnode.props)
-
     function emit(event, ...payload) {
       const eventName = `on${event[0].toUpperCase()}${event.slice(1)}`
       /* 在组件实例上找到这个函数,然后调用,并把参数传给它,这个组件实例是一个组件的整体实例,即虚拟dom上的实例*/
@@ -578,6 +560,16 @@ function createRenderer(options) {
       subTree: null,
       slots,
       mounteds: [],
+      keepAliveCtx: null,
+    }
+    const isKeepAlive = vnode.type.__isKeepAlive
+    if (isKeepAlive) {
+      instance.keepAliveCtx = {
+        move(vnode, container, anchor) {
+          insert(container, vnode.component.subTree.el, anchor)
+        },
+        createElement,
+      }
     }
     setCurrentInstance(instance)
     const setupResult = (setup && setup(shallowReadonly(instance.props), setupContext)) || null
@@ -666,13 +658,13 @@ function createRenderer(options) {
         const subTree = render.call(renderContext, renderContext)
         if (!instance.isMounted) {
           beforeMount && beforeMount.call(renderContext)
-          console.log('初始化组件')
+          console.log('初始化组件:', 'subTree', subTree)
           patch(null, subTree, container, anchor) /* 挂载组件上的vnode */
           instance.isMounted = true
           mounted && instance.mounteds.push(mounted)
           instance.mounteds.forEach((mounted) => mounted && mounted.call(renderContext))
         } else {
-          console.log('更新组件')
+          console.log('更新组件:', 'subTreeOld', instance.subTree, 'subTreeNew', subTree)
           beforeUpdate && beforeUpdate.call(renderContext)
           patch(instance.subTree, subTree, container, anchor) /* 更新组件上的vnode */
           updated && updated.call(renderContext)
@@ -779,6 +771,65 @@ function createRenderer(options) {
       },
     }
   }
+  const KeepAlive = {
+    __isKeepAlive: true,
+    props: {
+      include: {
+        type: RegExp,
+        default: '',
+      },
+      exclude: {
+        type: RegExp,
+        default: '',
+      },
+    },
+    setup(props, { slots }) {
+      // 缓存要保持激活的组件,key是组件的配置对象(type,value是组件本身(vnode,即虚拟dom))
+      const cache = new Map()
+      /* 当前创建的组件示例,也就是KeepAlive组件的示例此处定义的KeepAlive只是一个
+         配置对象(所有的组件都是这样,完成主要代码的是个配置对象,而组件实例从配置
+         对象上获取各种配置,如data,computeds,watchs,methods),也就是如何描述这个组件,真正的组件是组件的示例
+      */
+      const instance = currentInstance
+      const { move, createElement } = instance.keepAliveCtx
+      const storageContainer = createElement('div')
+      // 假装卸载,其实是把这个vnode移到一个没有被添加到一个游离节点中,让其不显示在页面上
+      // move函数:移动一个虚拟节点到任意位置
+      instance._deActivate = (vnode) => {
+        move(vnode, storageContainer)
+      }
+      instance._activate = (vnode, container, anchor) => {
+        move(vnode, container, anchor)
+      }
+      return () => {
+        const rawVnode = slots.default()
+        console.log('rawVnode', rawVnode)
+        if (typeof rawVnode.type !== 'object' && typeof rawVnode.type !== 'function') {
+          // 说明不是组件,非组件不能被keepAlive
+          console.log('这不是组件,不能缓存在KeepAlive组件里')
+          return rawVnode
+        }
+        // 根据要保持活性的组件的名字来查找哪些组件确实需要缓存或者不需要缓存
+
+        // 组件
+        const cacheVnode = cache.get(rawVnode.type)
+        if (cacheVnode) {
+          // 说明之前显示过这个组件,那就直接使用之前的组件实例
+          rawVnode.component = cacheVnode.component
+          // 标记是已经被缓存了,避免渲染器重复挂载,而是执行active方法
+          rawVnode.keptAlive = true
+        } else {
+          // 如果没有,那就需要执行首次挂载,并缓存这个虚拟dom
+          // 如果没有,那就不需要标记被缓存,因为需要挂载
+          cache.set(rawVnode.type, rawVnode)
+        }
+        // 避免卸载时渲染器将其卸载掉,而是执行deActive方法
+        rawVnode.shouldKeepAlive = true
+        rawVnode.keepAliveInstance = instance
+        return rawVnode
+      }
+    },
+  }
   function onMounted(fn) {
     if (currentInstance) {
       console.log('当前挂载的组件实例', currentInstance)
@@ -826,7 +877,7 @@ function createRenderer(options) {
   function patchComponent(n1, n2, container, anchor) {
     const instance = (n2.component = n1.component)
     const { props, attrs } = instance /* 在组件里定义的props */
-    if (hasPropsChanged(n1.props, n2.props)) {
+    if (n1.props && hasPropsChanged(n1.props, n2.props)) {
       // 有props改变了,需要更新props
       const [nextProps] = resolveProps(n2.type.props, n2.props)
       for (const k in nextProps) {
@@ -840,7 +891,7 @@ function createRenderer(options) {
         }
       }
     }
-    if (hasPropsChanged(n1.attrs, n2.attrs)) {
+    if (n1.attrs && hasPropsChanged(n1.attrs, n2.attrs)) {
       // 有attrs改变了,需要更新attrs
       const [_, nextAttrs] = resolveProps(n2.type.attrs, n2.attrs)
       for (const k in nextAttrs) {
@@ -869,7 +920,7 @@ function createRenderer(options) {
     }
     // 使用默认值
     for (const key in options) {
-      if (!(key in propsData)) {
+      if (propsData && !(key in propsData)) {
         // 在组件里定义了但是父组件没有传入(在组件身上为props赋值)
         props[key] = options[key].default
       }
@@ -918,9 +969,10 @@ function createRenderer(options) {
     onMounted,
     onUnmounted,
     defineAsyncComponent,
+    KeepAlive,
   }
 }
-const { render, h, onMounted, onUnmounted, defineAsyncComponent } = createRenderer({
+const { render, h, onMounted, onUnmounted, defineAsyncComponent, KeepAlive } = createRenderer({
   createElement: (tag) => {
     return document.createElement(tag)
   },

@@ -485,8 +485,37 @@
     const componentVNodeKeepAlive = {
       type: myComponentKeepAlive,
     }
+    const myComponentTeleport = {
+      setup() {
+        const to = ref('body')
+        const changePosition = () => {
+          to.value = to.value === 'body' ? 'button' : 'body'
+        }
+        return () => {
+          return h('div', 6, null, [
+            h(
+              'button',
+              3,
+              {
+                onClick() {
+                  changePosition()
+                },
+              },
+              to.value === 'body' ? '去button' : '去body'
+            ),
+            h(Teleport, 1, { to: to.value }, [
+              h('div', 2, { class: 'abc' }, [h(myComponentKeepAlive)]),
+            ]),
+          ])
+        }
+      },
+    }
+    const componentVNodeTeleport = {
+      type: myComponentTeleport,
+    }
     // render(componentVNodeSetup, document.querySelector('#app'))
-    render(componentVNodeKeepAlive, document.querySelector('#app'))
+    // render(componentVNodeKeepAlive, document.querySelector('#app'))
+    render(componentVNodeTeleport, document.querySelector('#app'))
     // render(componentVNodeSetupAsync, document.querySelector('#app'))
     // render(componentVNodeFunction, document.querySelector('#app'))
     // render(componentVNode1, document.querySelector('#app'))

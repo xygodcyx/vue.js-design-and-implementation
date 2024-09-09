@@ -4,11 +4,6 @@
 			"path": "dev/reactiveDev.js",
 			"bookmarks": [
 				{
-					"line": 215,
-					"column": 20,
-					"label": ""
-				},
-				{
 					"line": 844,
 					"column": 10,
 					"label": ""
@@ -49,23 +44,23 @@
 					"label": ""
 				},
 				{
-					"line": 205,
+					"line": 215,
 					"column": 55,
 					"label": ""
 				},
 				{
-					"line": 656,
+					"line": 666,
 					"column": 11,
 					"label": ""
 				},
 				{
-					"line": 775,
-					"column": 21,
+					"line": 783,
+					"column": 12,
 					"label": ""
 				},
 				{
-					"line": 977,
-					"column": 28,
+					"line": 1005,
+					"column": 12,
 					"label": ""
 				}
 			]

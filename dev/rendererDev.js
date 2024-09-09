@@ -135,6 +135,16 @@ function createRenderer(options) {
         /* 走patchChildren不会错,因为patchelement里最终会执行patch(对children进行patch) */
         patchChildren(n1, n2, container)
       }
+    } else if (typeof type === 'object' && type.__isTeleport) {
+      // 是teleport组件,单独渲染
+      type.process(n1, n2, container, anchor, {
+        patch,
+        patchChildren,
+        unmount,
+        move(vnode, container, anchor) {
+          insert(container, vnode.component ? vnode.subTree.el : vnode.el, anchor)
+        },
+      })
     } else if (typeof type === 'object' || typeof type === 'function') {
       // 组件,可以使有状态的普通组件,也可以是无状态的函数组件(没有data和生命周期的组件)
       if (!n1) {
@@ -809,8 +819,7 @@ function createRenderer(options) {
           console.log('这不是组件,不能缓存在KeepAlive组件里')
           return rawVnode
         }
-        // 根据要保持活性的组件的名字来查找哪些组件确实需要缓存或者不需要缓存
-
+        // TODO根据要保持活性的组件的名字来查找哪些组件确实需要缓存或者不需要缓存
         // 组件
         const cacheVnode = cache.get(rawVnode.type)
         if (cacheVnode) {
@@ -830,6 +839,27 @@ function createRenderer(options) {
       }
     },
   }
+  const Teleport = {
+    __isTeleport: true,
+    process(n1, n2, container, anchor, internals) {
+      const { patch, patchChildren, move } = internals
+      if (!n1) {
+        // 挂载
+        const target =
+          typeof n2.props.to === 'string' ? document.querySelector(n2.props.to) : n2.props.to
+        // teleport组件实例上的children是要传送的虚拟节点,不是以插槽的形式(其实也可以,但是没有)
+        n2.children.forEach((c) => patch(null, c, target, anchor))
+      } else {
+        patchChildren(n1, n2, container)
+        if (n1.props.to !== n2.props.to) {
+          const newTarget =
+            typeof n2.props.to === 'string' ? document.querySelector(n2.props.to) : n2.props.to
+          n2.children.forEach((c) => move(c, newTarget))
+        }
+      }
+    },
+  }
+
   function onMounted(fn) {
     if (currentInstance) {
       console.log('当前挂载的组件实例', currentInstance)
@@ -970,98 +1000,100 @@ function createRenderer(options) {
     onUnmounted,
     defineAsyncComponent,
     KeepAlive,
+    Teleport,
   }
 }
-const { render, h, onMounted, onUnmounted, defineAsyncComponent, KeepAlive } = createRenderer({
-  createElement: (tag) => {
-    return document.createElement(tag)
-  },
-  setElementText: (el, text) => {
-    el.textContent = text
-  },
-  createText: (text) => {
-    return document.createTextNode(text)
-  },
-  createComment: (comment) => {
-    return document.createComment(comment)
-  },
-  setText: (el, text) => {
-    el.nodeValue = text
-  },
-  /* 终于知道为什么需要anchor了,因为需要在不需要移动的元素后面插入需要移动的元素
+const { render, h, onMounted, onUnmounted, defineAsyncComponent, KeepAlive, Teleport } =
+  createRenderer({
+    createElement: (tag) => {
+      return document.createElement(tag)
+    },
+    setElementText: (el, text) => {
+      el.textContent = text
+    },
+    createText: (text) => {
+      return document.createTextNode(text)
+    },
+    createComment: (comment) => {
+      return document.createComment(comment)
+    },
+    setText: (el, text) => {
+      el.nodeValue = text
+    },
+    /* 终于知道为什么需要anchor了,因为需要在不需要移动的元素后面插入需要移动的元素
   (而anchor就是不需要移动的元素的下一个节点)(简单diff算法,1号天才的算法) */
-  async insert(parent, el, anchor = null) {
-    // 如果引用节点(anchor)为 null，则将指定的节点添加到指定父节点(parent)的子节点列表的末尾。
-    parent.insertBefore(el, anchor)
-  },
-  removeDom(parent, el) {
-    parent.removeChild(el)
-  },
-  patchProps(el, key, prevValue, nextValue) {
-    // 有些属性在某些元素上是只读的
-    function shouldSetAsProps(el, key, value) {
-      if (key === 'form' && el.tagName === 'INPUT') return false
-      return key in el
-    }
-    if (/^on/.test(key)) {
-      // 事件绑定
-      const eName = key.slice(2).toLowerCase()
-      //因为el.vel可能不存在,所以不能写成这样：el.vel[eName]
-      // invokers是一个元素绑定的所有事件
-      const invokers = el.vel || (el.vel = {})
-      let invoker = invokers[eName]
-      if (nextValue) {
-        // 需要绑定事件
-        if (!invoker) {
-          // 第一次绑定事件
-          invoker = invokers[eName] = function (e) {
-            if (e.timeStamp < invoker.attached) {
-              // *防止事件冒泡导致父元素事件错误触发,当事件进行冒泡到父元素时,父
-              // 元素接收到的事件对象是子元素的事件对象,所以各种属性都是子元素
-              // 的,所以我们可以根据子元素的timeStamp属性来判断父元素执行时是否
-              // 还没有绑定事件(在绑定事件时会将当前时间戳(高精时间)记录下来,然
-              // 后与子元素事件发生时的时间作对比)
-              // !还是基础不牢!,补红宝书,补犀牛书,补JavaScript基础
-              return
+    async insert(parent, el, anchor = null) {
+      // 如果引用节点(anchor)为 null，则将指定的节点添加到指定父节点(parent)的子节点列表的末尾。
+      parent.insertBefore(el, anchor)
+    },
+    removeDom(parent, el) {
+      parent.removeChild(el)
+    },
+    patchProps(el, key, prevValue, nextValue) {
+      // 有些属性在某些元素上是只读的
+      function shouldSetAsProps(el, key, value) {
+        if (key === 'form' && el.tagName === 'INPUT') return false
+        return key in el
+      }
+      if (/^on/.test(key)) {
+        // 事件绑定
+        const eName = key.slice(2).toLowerCase()
+        //因为el.vel可能不存在,所以不能写成这样：el.vel[eName]
+        // invokers是一个元素绑定的所有事件
+        const invokers = el.vel || (el.vel = {})
+        let invoker = invokers[eName]
+        if (nextValue) {
+          // 需要绑定事件
+          if (!invoker) {
+            // 第一次绑定事件
+            invoker = invokers[eName] = function (e) {
+              if (e.timeStamp < invoker.attached) {
+                // *防止事件冒泡导致父元素事件错误触发,当事件进行冒泡到父元素时,父
+                // 元素接收到的事件对象是子元素的事件对象,所以各种属性都是子元素
+                // 的,所以我们可以根据子元素的timeStamp属性来判断父元素执行时是否
+                // 还没有绑定事件(在绑定事件时会将当前时间戳(高精时间)记录下来,然
+                // 后与子元素事件发生时的时间作对比)
+                // !还是基础不牢!,补红宝书,补犀牛书,补JavaScript基础
+                return
+              }
+              // 传递的事件可以是数组，需要遍历执行
+              if (Array.isArray(invoker.value)) {
+                invoker.value.forEach((fn) => fn(e))
+              } else {
+                invoker.value(e)
+              }
             }
-            // 传递的事件可以是数组，需要遍历执行
-            if (Array.isArray(invoker.value)) {
-              invoker.value.forEach((fn) => fn(e))
-            } else {
-              invoker.value(e)
-            }
+            invoker.attached = performance.now() // 记录绑定时间
+            invoker.value = nextValue
+            el.addEventListener(eName, invoker)
+          } else {
+            // 已经绑定过事件，需要更新invoker的value
+            invoker.value = nextValue
           }
-          invoker.attached = performance.now() // 记录绑定时间
-          invoker.value = nextValue
-          el.addEventListener(eName, invoker)
         } else {
-          // 已经绑定过事件，需要更新invoker的value
-          invoker.value = nextValue
+          // 解绑事件
+          el.removeEventListener(eName, invoker)
+        }
+      } else if (key === 'class') {
+        // 类名绑定
+        el.className = normalizeClass(nextValue)
+      } else if (key === 'style') {
+        el.style = normalizeStyle(nextValue)
+      } else if (shouldSetAsProps(el, key, nextValue)) {
+        // 属性设置
+        // 如果key是DOM Properties属性
+        const type = typeof el[key]
+        if (type === 'boolean' && nextValue === '') {
+          // 修正 el["disabled"] = "" 浏览器会将其设置为false的情况,实际上我们希望为true
+          el[key] = true
+        } else {
+          el[key] = nextValue
         }
       } else {
-        // 解绑事件
-        el.removeEventListener(eName, invoker)
+        el.setAttribute(key, nextValue)
       }
-    } else if (key === 'class') {
-      // 类名绑定
-      el.className = normalizeClass(nextValue)
-    } else if (key === 'style') {
-      el.style = normalizeStyle(nextValue)
-    } else if (shouldSetAsProps(el, key, nextValue)) {
-      // 属性设置
-      // 如果key是DOM Properties属性
-      const type = typeof el[key]
-      if (type === 'boolean' && nextValue === '') {
-        // 修正 el["disabled"] = "" 浏览器会将其设置为false的情况,实际上我们希望为true
-        el[key] = true
-      } else {
-        el[key] = nextValue
-      }
-    } else {
-      el.setAttribute(key, nextValue)
-    }
-  },
-})
+    },
+  })
 
 // render(null, document.getElementById('app'))
 

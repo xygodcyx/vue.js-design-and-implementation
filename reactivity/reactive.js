@@ -1,4 +1,4 @@
-const minVue = (function (exports) {
+const minReactive = (function (exports) {
   'use strict'
   // {}型对象的 for...in/of 的依赖收集 唯一键名
   let ITERATE_KEY = Symbol() //Returns a new unique Symbol value.

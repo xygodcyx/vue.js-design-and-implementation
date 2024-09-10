@@ -38,7 +38,8 @@
   <!-- <script src="https://unpkg.com/vue@3"></script> -->
   <script src="lodash.js"></script>
   <script src="./reactivity/reactive.js"></script>
-  <script src="dev/rendererDev.js"></script>
+  <!-- <script src="dev/rendererDev.js"></script> -->
+  <script src="./renderer/renderer.js"></script>
 
   <script>
     // const text = ref('小明') //ref在定义完毕时就已经时响应式,收集依赖发生在读取.value时
@@ -116,7 +117,20 @@
     // }, 1000)
 
     // const text = ref('xygod')
-
+    const { ref, reactive, shallowRef, shallowReactive, computed, watch } = minReactive
+    const {
+      Text,
+      Comment,
+      Fragment,
+      render,
+      h,
+      onMounted,
+      onUnmounted,
+      defineAsyncComponent,
+      KeepAlive,
+      Teleport,
+      Transition,
+    } = minRenderer
     const myComponent1 = {
       name: 'component',
       data() {

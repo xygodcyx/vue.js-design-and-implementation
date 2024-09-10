@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0" />
+    <title>写编译器</title>
+  </head>
+  <body>
+    <script src="./dev/compilerDev.js"></script>
+    <script src="./reactivity/reactive.js"></script>
+    <script src="./dev/rendererDev.js"></script>
+
+    <script>
+      const ast = parse(`<div><p>Vue😄</p><p>JS😀</p></div>`)
+      console.log(ast)
+      transform(ast)
+    </script>
+  </body>
+</html>

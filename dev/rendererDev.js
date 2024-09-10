@@ -2,8 +2,8 @@ const Text = Symbol() // 描述文本节点
 const Comment = Symbol() // 描述注释节点
 const Fragment = Symbol() // 描述片段节点
 const { effect, reactive, computed, shallowReactive, shallowReadonly, ref, shallowRef } =
-  typeof VueReactivity === 'undefined' ? minVue : VueReactivity
-const { watch } = minVue
+  typeof VueReactivity === 'undefined' ? minReactive : VueReactivity
+const { watch } = minReactive
 function createRenderer(options) {
   const {
     createElement,

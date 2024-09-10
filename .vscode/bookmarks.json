@@ -39,27 +39,52 @@
 			"path": "dev/rendererDev.js",
 			"bookmarks": [
 				{
-					"line": 72,
+					"line": 18,
+					"column": 27,
+					"label": ""
+				},
+				{
+					"line": 77,
 					"column": 16,
 					"label": ""
 				},
 				{
-					"line": 215,
+					"line": 220,
 					"column": 55,
 					"label": ""
 				},
 				{
-					"line": 666,
+					"line": 495,
+					"column": 34,
+					"label": ""
+				},
+				{
+					"line": 530,
+					"column": 18,
+					"label": ""
+				},
+				{
+					"line": 677,
 					"column": 11,
 					"label": ""
 				},
 				{
-					"line": 783,
+					"line": 796,
 					"column": 12,
 					"label": ""
 				},
 				{
-					"line": 1005,
+					"line": 864,
+					"column": 11,
+					"label": ""
+				},
+				{
+					"line": 885,
+					"column": 11,
+					"label": ""
+				},
+				{
+					"line": 1098,
 					"column": 12,
 					"label": ""
 				}

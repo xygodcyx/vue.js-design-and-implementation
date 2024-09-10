@@ -47,7 +47,12 @@ function createRenderer(options) {
     // 解决组件卸载会递归2次的问题
     const parent = vnode.el.parentNode
     if (parent) {
-      removeDom(parent, vnode.el)
+      const performance = () => removeDom(parent, vnode.el)
+      if (vnode.transition) {
+        vnode.transition.leave(vnode.el, performance)
+      } else {
+        performance()
+      }
     }
   }
 
@@ -512,7 +517,15 @@ function createRenderer(options) {
         patchProps(el /* 要设置属性的元素 */, key, null, vnode.props[key])
       }
     }
+    const needTransition = vnode.transition
+    if (needTransition) {
+      // 需要过渡
+      vnode.transition.beforeEnter(el)
+    }
     insert(container, el, anchor) // 挂载节点到父容器(真实dom) (会等到所有子节点都insert完毕了才会insert自己)
+    if (needTransition) {
+      vnode.transition.enter(el)
+    }
   }
   let currentInstance = null
   function mountComponent(vnode, container, anchor) {
@@ -782,6 +795,7 @@ function createRenderer(options) {
     }
   }
   const KeepAlive = {
+    name: 'KeepAlive',
     __isKeepAlive: true,
     props: {
       include: {
@@ -820,6 +834,15 @@ function createRenderer(options) {
           return rawVnode
         }
         // TODO根据要保持活性的组件的名字来查找哪些组件确实需要缓存或者不需要缓存
+        const name = rawVnode.name
+        if (name) {
+          if (
+            (props.include && props.include.test(name)) ||
+            (props.exclude && props.exclude.test(name))
+          ) {
+            return rawVnode
+          }
+        }
         // 组件
         const cacheVnode = cache.get(rawVnode.type)
         if (cacheVnode) {
@@ -840,6 +863,7 @@ function createRenderer(options) {
     },
   }
   const Teleport = {
+    name: 'Teleport',
     __isTeleport: true,
     process(n1, n2, container, anchor, internals) {
       const { patch, patchChildren, move } = internals
@@ -858,6 +882,72 @@ function createRenderer(options) {
         }
       }
     },
+  }
+  const Transition = {
+    name: 'Transition',
+    props: {
+      name: String,
+    },
+    setup(props, { slots }) {
+      return () => {
+        const name = props.name
+        // TODO 可变的name类名
+        const innerVnode = slots.default()
+        const handleEnterTransitionEnd = (el) => {
+          el.classList.remove('enter-to')
+          el.classList.remove('enter-active')
+          el.removeEventListener('transitionend', handleEnterTransitionEnd)
+        }
+        const handleLeaveTransitionEnd = (el, performance) => {
+          el.classList.remove('leave-to')
+          el.classList.remove('leave-active')
+          performance()
+          el.removeEventListener('transitionend', handleLeaveTransitionEnd)
+        }
+        if (innerVnode !== null) {
+          if (innerVnode.type !== Text && innerVnode.type !== Comment) {
+            innerVnode.transition = {
+              beforeEnter(el) {
+                // 元素还没有出现在html文档中,但是元素已经通过createElement生成出来
+                el.classList.add('enter-form')
+                el.classList.add('enter-active')
+              },
+              enter(el) {
+                // 元素已经被添加到html文档中,将在当前帧被绘制出来,所以我们等待一帧,在下一帧应用enter-to的样式
+                nextFrame(() => {
+                  el.classList.remove('enter-form')
+                  el.classList.add('enter-to')
+                  el.addEventListener('transitionend', handleEnterTransitionEnd.bind(null, el))
+                })
+              },
+              leave(el, performRemove) {
+                el.classList.add('leave-form')
+                el.classList.add('leave-active')
+                // 强制reflow,使样式添加生效(设置位置等)
+                document.body.offsetHeight
+                nextFrame(() => {
+                  el.classList.remove('leave-form')
+                  el.classList.add('leave-to')
+                })
+                el.addEventListener(
+                  'transitionend',
+                  handleLeaveTransitionEnd.bind(null, el, performRemove)
+                )
+              },
+            }
+          }
+        }
+        return innerVnode
+      }
+    },
+  }
+  // 在下一帧调用fn
+  function nextFrame(fn) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        fn()
+      })
+    })
   }
 
   function onMounted(fn) {
@@ -940,6 +1030,8 @@ function createRenderer(options) {
   function resolveProps(options, propsData) {
     const props = {}
     const attrs = {}
+    options = options || {}
+    propsData = propsData || {}
     // 为组件身上定义的props赋值
     for (const key in propsData) {
       if (key in options || key.startsWith('on')) {
@@ -950,9 +1042,9 @@ function createRenderer(options) {
     }
     // 使用默认值
     for (const key in options) {
-      if (propsData && !(key in propsData)) {
+      if (!(key in propsData || {})) {
         // 在组件里定义了但是父组件没有传入(在组件身上为props赋值)
-        props[key] = options[key].default
+        props[key] = options[key].default || null
       }
     }
     return [props, attrs]
@@ -1001,9 +1093,10 @@ function createRenderer(options) {
     defineAsyncComponent,
     KeepAlive,
     Teleport,
+    Transition,
   }
 }
-const { render, h, onMounted, onUnmounted, defineAsyncComponent, KeepAlive, Teleport } =
+const { render, h, onMounted, onUnmounted, defineAsyncComponent, KeepAlive, Teleport, Transition } =
   createRenderer({
     createElement: (tag) => {
       return document.createElement(tag)

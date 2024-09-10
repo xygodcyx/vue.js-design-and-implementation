@@ -6,6 +6,26 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0" />
     <title>自己写的</title>
+    <style>
+      .enter-form {
+        transform: translateX(-200px);
+      }
+      .enter-to {
+        transform: translateX(0px);
+      }
+      .enter-active {
+        transition: 1s ease-in;
+      }
+      .leave-form {
+        transform: translateX(0px);
+      }
+      .leave-active {
+        transition: 1s ease-out;
+      }
+      .leave-to {
+        transform: translateX(-200px);
+      }
+    </style>
   </head>
 
   <body>
@@ -415,14 +435,6 @@
           },
         }
         return () => {
-          let renderComponent = null
-          if (currentTab.value === 0) {
-            renderComponent = Tab1
-          } else if (currentTab.value === 1) {
-            renderComponent = Tab2
-          } else if (currentTab.value === 2) {
-            renderComponent = Tab3
-          }
           return h('div', 1, null, [
             h(
               'button',
@@ -472,12 +484,6 @@
                 },
               },
             },
-            // {
-            //   type: 'div',
-            //   key: 99,
-            //   props: {},
-            //   children: [renderComponent],
-            // },
           ])
         }
       },
@@ -485,6 +491,7 @@
     const componentVNodeKeepAlive = {
       type: myComponentKeepAlive,
     }
+
     const myComponentTeleport = {
       setup() {
         const to = ref('body')
@@ -513,9 +520,45 @@
     const componentVNodeTeleport = {
       type: myComponentTeleport,
     }
+
+    const myComponentTransition = {
+      setup() {
+        const isShow = ref(true)
+        return () => {
+          return h('div', 1, null, [
+            h(
+              'button',
+              2,
+              {
+                onClick() {
+                  isShow.value = !isShow.value
+                },
+              },
+              isShow.value ? '隐藏' : '显示'
+            ),
+            {
+              type: Transition,
+              children: {
+                default() {
+                  let renderComponent = null
+                  renderComponent = isShow.value
+                    ? h('div', 2, null, '我是一个需要过渡的内容')
+                    : h(Text, 3, null, '')
+                  return renderComponent
+                },
+              },
+            },
+          ])
+        }
+      },
+    }
+    const componentVNodeTransition = {
+      type: myComponentTransition,
+    }
     // render(componentVNodeSetup, document.querySelector('#app'))
     // render(componentVNodeKeepAlive, document.querySelector('#app'))
-    render(componentVNodeTeleport, document.querySelector('#app'))
+    // render(componentVNodeTeleport, document.querySelector('#app'))
+    render(componentVNodeTransition, document.querySelector('#app'))
     // render(componentVNodeSetupAsync, document.querySelector('#app'))
     // render(componentVNodeFunction, document.querySelector('#app'))
     // render(componentVNode1, document.querySelector('#app'))

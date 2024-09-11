@@ -579,7 +579,7 @@ const minRenderer = (function (exports) {
         props: shallowReactive(props),
         attrs /* 不是响应式的 */,
         isMounted: false,
-        methods,
+        methods: methods || {},
         watch: watchOptions,
         computed: computedOptions,
         subTree: null,
@@ -1065,12 +1065,14 @@ const minRenderer = (function (exports) {
       }
       return false
     }
-
-    function h(type, key, props = null, children = null) {
+    let key = 1
+    function h(type, props = null, children = null) {
       const res = {}
       res['type'] = type
-      res['key'] = key
-      if (arguments.length === 3) {
+      res['key'] = 1
+      res['props'] = null
+      res['children'] = null
+      if (arguments.length === 2) {
         // 说明最后一个参数可能是prop或者children
         if (typeof props === 'object' && !Array.isArray(props)) {
           // 是对象而且不是数组,说明是props
@@ -1079,7 +1081,7 @@ const minRenderer = (function (exports) {
           // 说明第二个参数是子节点
           res['children'] = props
         }
-      } else if (arguments.length === 4) {
+      } else if (arguments.length === 3) {
         res['props'] = props
         res['children'] = children
       }

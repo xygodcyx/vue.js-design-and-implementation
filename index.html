@@ -306,7 +306,6 @@
               },
               h(
                 'span',
-                2,
                 {
                   onClick() {
                     console.log(1)
@@ -334,23 +333,23 @@
       children: {
         // 插槽,组件的子节点就是插槽
         header(title) {
-          return h('div', 1, null, `header ${title}`)
+          return h('div', null, `header ${title}`)
         },
         main() {
-          return h('div', 2, null, [h('span', 4, null, 'main')])
+          return h('div', null, [h('span', null, 'main')])
         },
         footer() {
-          return h('div', 3, null, 'footer')
+          return h('div', null, 'footer')
         },
         default() {
-          return h('div', 5, null, 'default')
+          return h('div', null, 'default')
         },
       },
     }
     const component = {
       render() {
         console.log('准备渲染用户组件')
-        return h('div', 1, null, '这是延迟加载出来的组件')
+        return h('div', null, '这是延迟加载出来的组件')
       },
     }
     const componentVNodeSetupAsync = {
@@ -379,13 +378,13 @@
         errorComponent: {
           render() {
             console.log('准备渲染错误组件')
-            return h('div', 2, null, '出错了')
+            return h('div', null, '出错了')
           },
         },
         placeholderComponent: {
           render() {
             console.log('准备渲染占位符组件')
-            return h('div', 3, null, '占位符')
+            return h('div', null, '占位符')
           },
         },
       }),
@@ -410,10 +409,9 @@
       setup(props) {
         const number = ref(0)
         return () => {
-          return h('div', 1, null, [
+          return h('div', null, [
             h(
               'button',
-              2,
               {
                 onClick() {
                   number.value++
@@ -421,8 +419,8 @@
               },
               '+1'
             ),
-            h('div', 3, null, `当前标签页:${props.title}`),
-            h('div', 3, null, `当前数字:${number.value}`),
+            h('div', null, `当前标签页:${props.title}`),
+            h('div', null, `当前数字:${number.value}`),
           ])
         }
       },
@@ -449,10 +447,9 @@
           },
         }
         return () => {
-          return h('div', 1, null, [
+          return h('div', null, [
             h(
               'button',
-              2,
               {
                 onClick() {
                   currentTab.value = 0
@@ -462,7 +459,6 @@
             ),
             h(
               'button',
-              3,
               {
                 onClick() {
                   currentTab.value = 1
@@ -472,7 +468,6 @@
             ),
             h(
               'button',
-              4,
               {
                 onClick() {
                   currentTab.value = 2
@@ -482,7 +477,6 @@
             ),
             {
               type: KeepAlive,
-              key: 99,
               props: {},
               children: {
                 default() {
@@ -513,10 +507,9 @@
           to.value = to.value === 'body' ? 'button' : 'body'
         }
         return () => {
-          return h('div', 6, null, [
+          return h('div', null, [
             h(
               'button',
-              3,
               {
                 onClick() {
                   changePosition()
@@ -524,9 +517,7 @@
               },
               to.value === 'body' ? '去button' : '去body'
             ),
-            h(Teleport, 1, { to: to.value }, [
-              h('div', 2, { class: 'abc' }, [h(myComponentKeepAlive)]),
-            ]),
+            h(Teleport, { to: to.value }, [h('div', { class: 'abc' }, [h(myComponentKeepAlive)])]),
           ])
         }
       },
@@ -539,10 +530,9 @@
       setup() {
         const isShow = ref(true)
         return () => {
-          return h('div', 1, null, [
+          return h('div', null, [
             h(
               'button',
-              2,
               {
                 onClick() {
                   isShow.value = !isShow.value
@@ -556,8 +546,8 @@
                 default() {
                   let renderComponent = null
                   renderComponent = isShow.value
-                    ? h('div', 2, null, '我是一个需要过渡的内容')
-                    : h(Text, 3, null, '')
+                    ? h('div', null, '我是一个需要过渡的内容')
+                    : h(Text, null, '')
                   return renderComponent
                 },
               },
@@ -569,10 +559,10 @@
     const componentVNodeTransition = {
       type: myComponentTransition,
     }
-    // render(componentVNodeSetup, document.querySelector('#app'))
+    render(componentVNodeSetup, document.querySelector('#app'))
     // render(componentVNodeKeepAlive, document.querySelector('#app'))
     // render(componentVNodeTeleport, document.querySelector('#app'))
-    render(componentVNodeTransition, document.querySelector('#app'))
+    // render(componentVNodeTransition, document.querySelector('#app'))
     // render(componentVNodeSetupAsync, document.querySelector('#app'))
     // render(componentVNodeFunction, document.querySelector('#app'))
     // render(componentVNode1, document.querySelector('#app'))

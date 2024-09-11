@@ -8,14 +8,40 @@
     <title>写编译器</title>
   </head>
   <body>
+    <div id="app"></div>
     <script src="./dev/compilerDev.js"></script>
     <script src="./reactivity/reactive.js"></script>
-    <script src="./dev/rendererDev.js"></script>
+    <script src="./renderer/renderer.js"></script>
 
     <script>
-      const ast = parse(`<div><p>Vue😄</p><p>JS😀</p></div>`)
-      console.log(ast)
-      transform(ast)
+      const { render, h } = minRenderer
+      const { compile } = minCompiler
+      const myComponent = {
+        data() {
+          return {
+            str: `<div><p>Vue😄</p><p>JS😀</p></div>`,
+            code: compile(`<div><p>Vue😄</p><p>JS😀</p></div>`),
+          }
+        },
+        mounted() {
+          setTimeout(() => {
+            this.str = `<div><p>Vue😄</p><p>NodeJS😀</p></div>`
+          }, 1000)
+        },
+        watch: {
+          str(value) {
+            this.code = compile(`<div><p>Vue😄</p><p>NodeJS😀</p></div>`)
+          },
+        },
+        render: function () {
+          const code = this.code
+          return new Function(`return ${code}`)()()
+        },
+      }
+      const component = {
+        type: myComponent,
+      }
+      render(component, document.querySelector('#app'))
     </script>
   </body>
 </html>

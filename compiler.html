@@ -25,12 +25,12 @@
         },
         mounted() {
           setTimeout(() => {
-            this.str = `<div><p>Vue😄</p><p>NodeJS😀</p></div>`
+            this.str = `<div><p>Vue😀</p><p>NodeJS🥰</p></div>`
           }, 1000)
         },
         watch: {
           str(value) {
-            this.code = compile(`<div><p>Vue😄</p><p>NodeJS😀</p></div>`)
+            this.code = compile(value)
           },
         },
         render: function () {

@@ -186,7 +186,7 @@ const minCompiler = (function (exports) {
     return root
   }
 
-  // transform(把模板AST转换为JsAST)
+  // transform(把模板AST转换为JsAST) 也就是把描述模板的AST转换成描述JavaScript的AST
   function transform(ast) {
     // 这个上下文中的数据会在所有的转换节点之间共享
     const context = {

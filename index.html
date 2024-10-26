@@ -265,6 +265,24 @@
       },
     }
 
+    function useCounter() {
+      const a = ref(1)
+      const b = ref(1)
+      const total = computed(() => a.value + b.value)
+      watch(
+        () => total.value,
+        () => {
+          console.log(total.value)
+        }
+      )
+      onMounted(() => {
+        console.log(total.value)
+      })
+      function addA() {
+        a.value++
+      }
+      return { addA, total }
+    }
     const myComponentSetup = {
       name: 'componentSetUp',
       props: {
@@ -282,6 +300,7 @@
           console.log('b', b.value)
         })
         const obj = reactive({ a: 1, b: 2 })
+        const counter = useCounter()
         onMounted(() => {})
         watch(sum, (n, o) =>
           emit('sumUpdate', sum.value, 'update')
@@ -311,7 +330,7 @@
                     console.log(1)
                   },
                 },
-                `hello,my name is ${props.title},sum:${sum.value},attrs:${attrs.other}`
+                `hello,my name is ${props.title},sum:${sum.value},attrs:${attrs.other},useCounter total:${counter.total.value}`
               ),
               slots.header(props.title),
               slots.main(),

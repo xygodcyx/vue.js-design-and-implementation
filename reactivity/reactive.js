@@ -101,7 +101,9 @@ const minReactive = (function (exports) {
       }
     },
     forEach(callback, thisArg) {
-      const target = this[RAW_KEY]
+      // 拦截mao的forEach函数,这样就可以对map里的所有属性都注册一个副作用函数了,
+      // 当map中的任意一个发生了改变都会引起forEach的重新执行,这是符合预期的
+      const target = this[RAW_KEY] /* 拿到map/set的原始对象 */
       // 这个wrap函数可以将传入的原始数据转换为响应式数据,这是为了解决callback函数的参数是原始数据的问题
       const wrap = (val) => (typeof val === 'object' ? reactive(val) : val)
       // 依然和ITERATE_KEY进行绑定,因为forEach的遍历时机只和数组的长度有关,所以用ITERATE_KEY
@@ -414,7 +416,10 @@ const minReactive = (function (exports) {
         const oldValue = target[key]
         // 也是一样的处理方式,数组和普通对象,防止数据污染
         const rawValue = newValue[RAW_KEY] || newValue
-        // 一定要先判断修改的是什么,不然修改完了再判断那永远都是SET
+        // 一定要先判断修改的类型是什么,不然修改完了再判断那永远都是SET
+        /* 如果当前操作的是数组,那就判断数组的长度(因为对数组的增删总是对应到数
+        组长度的改变),而对象则需要掉用hasOwnProperty函数来判断当前是否是有这个属
+        性(key) */
         let type = Array.isArray(target)
           ? Number(key) < target.length
             ? 'SET'
@@ -423,9 +428,12 @@ const minReactive = (function (exports) {
           ? 'SET'
           : 'ADD'
         const res = Reflect.set(target, key, rawValue, receiver)
-        // 这是为了解决对象修改父级属性时(自身不存在此属性),副作用函数会执行两次的问题
-        // 修改属性时,会先触发子属性的set,但是没有找到此属性,于是会触发父级属性的set
-        // 但是这两次set的receiver都是子级,所以可以通过这种方式判断当前触发的对象是不是与receiver相匹配的对象
+        // receiver[RAW_KEY] === target是为了解决对象修改父级属性时(自身不存在此
+        // 属性),副作用函数会执行两次的问题,当修改属性时,会先触发子属性的set,但
+        // 是没有找到此属性,于是会触发父级属性的set但是这两次set的receiver都是子
+        // 对象(也就是真正想修改的哪个对象),所以可以通过这种方式判断当前触发的对
+        // 象是不是与receiver相匹配的对象(即当前对象,而不是根据原型链查找到的父
+        // 对象)
         if (receiver[RAW_KEY] === target) {
           if (
             oldValue !== newValue &&
@@ -433,7 +441,6 @@ const minReactive = (function (exports) {
             (oldValue === oldValue || newValue === newValue)
           ) {
             // 传入newValue是为了修改数组长度时,需要对索引大于等于新长度(newValue)的元素进行触发副作用函数重新执行
-
             trigger(target, key, type, newValue)
           } else {
             // console.trace('oldValue === newValue')
